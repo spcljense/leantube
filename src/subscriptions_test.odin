@@ -2,16 +2,17 @@
 package main
 
 import "./model"
+import "core:c"
 import "core:strings"
 import "core:sync/chan"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^testing.T) {
-	output := sdl.CreateSurface(160, 120, .RGBA32)
+	output := create_surface(160, 120)
 	if !testing.expect(t, output != nil) {return}
-	defer sdl.DestroySurface(output)
+	defer sdl.FreeSurface(output)
 	renderer := sdl.CreateSoftwareRenderer(output)
 	if !testing.expect(t, renderer != nil) {return}
 	defer sdl.DestroyRenderer(renderer)
@@ -45,7 +46,7 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Cover,
 			page = page,
 			index = 0,
-			surface = sdl.CreateSurface(31, 17, .RGBA32),
+			surface = create_surface(31, 17),
 		},
 	)
 	poll_network(renderer)
@@ -59,7 +60,7 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Channel_Avatar,
 			page = page,
 			index = 0,
-			surface = sdl.CreateSurface(19, 19, .RGBA32),
+			surface = create_surface(19, 19),
 		},
 	)
 	poll_network(renderer)
@@ -98,7 +99,7 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Cover,
 			page = page,
 			index = 2,
-			surface = sdl.CreateSurface(53, 29, .RGBA32),
+			surface = create_surface(53, 29),
 		},
 	)
 	chan.send(
@@ -107,16 +108,16 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Cover,
 			page = page,
 			index = 1,
-			surface = sdl.CreateSurface(41, 23, .RGBA32),
+			surface = create_surface(41, 23),
 		},
 	)
 	poll_network(renderer)
-	for expected, i in ([][2]f32{{53, 29}, {41, 23}, {31, 17}}) {
-		width, height: f32
+	for expected, i in ([][2]i32{{53, 29}, {41, 23}, {31, 17}}) {
+		width, height: c.int
 		if !testing.expect(t, textures[catalog.videos[i].cover_index] != nil) {return}
 		testing.expect(
 			t,
-			sdl.GetTextureSize(textures[catalog.videos[i].cover_index], &width, &height),
+			sdl.QueryTexture(textures[catalog.videos[i].cover_index], nil, nil, &width, &height) == 0,
 		)
 		testing.expect_value(t, width, expected[0])
 		testing.expect_value(t, height, expected[1])
@@ -128,7 +129,7 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Cover,
 			page = page - 1,
 			index = 2,
-			surface = sdl.CreateSurface(10, 10, .RGBA32),
+			surface = create_surface(10, 10),
 		},
 	)
 	chan.send(
@@ -137,7 +138,7 @@ subscription_sort_keeps_loaded_and_pending_covers_with_their_videos :: proc(t: ^
 			kind = .Cover,
 			page = page,
 			index = 99,
-			surface = sdl.CreateSurface(10, 10, .RGBA32),
+			surface = create_surface(10, 10),
 		},
 	)
 	poll_network(renderer)

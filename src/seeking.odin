@@ -3,7 +3,7 @@ package main
 import "./model"
 import sb "./sponsorblock"
 import "core:fmt"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // Remote presses move the knob at once. One seek follows the last press, so
 // a long jump does not restart the decoder for each step.
@@ -17,7 +17,7 @@ seek_pending: struct {
 queue_seek :: proc(offset_ms: f64) {
 	shown := timeline
 	if seek_pending.active {shown.seek_target_ms = seek_pending.target_ms}
-	seek_pending = {model.seek_target(shown, offset_ms, duration_ms), sdl.GetTicks(), true}
+	seek_pending = {model.seek_target(shown, offset_ms, duration_ms), u64(sdl.GetTicks()), true}
 }
 
 apply_pending_seek :: proc(now: u64) {

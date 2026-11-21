@@ -2,7 +2,7 @@ package main
 
 import clay "../vendor/clay"
 import "core:math"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // Round clip bounds outward so fractional edges do not leave a one-pixel gap.
 pixel_bounds :: proc(rect: sdl.FRect) -> sdl.Rect {
@@ -19,7 +19,7 @@ rounded_progress :: proc(
 	clip: sdl.Rect,
 ) -> bool {
 	saved_clip := clip
-	defer _ = sdl.SetRenderClipRect(renderer, &saved_clip)
+	defer _ = sdl.RenderSetClipRect(renderer, &saved_clip)
 	strip := pixel_bounds({rect.x, rect.y + rect.h - scaled(4), rect.w, scaled(4)})
 	completed := i32(f32(strip.w) * percent / 100)
 	for color, i in ([2]clay.Color{COLOR_TRACK, COLOR_ACCENT}) {
@@ -29,8 +29,9 @@ rounded_progress :: proc(
 			part.w -= completed
 		} else {part.w = completed}
 		visible: sdl.Rect
-		if !sdl.GetRectIntersection(clip, part, &visible) {continue}
-		if !sdl.SetRenderClipRect(renderer, &visible) ||
+		clip_copy := clip
+		if !bool(sdl.IntersectRect(&clip_copy, &part, &visible)) {continue}
+		if sdl.RenderSetClipRect(renderer, &visible) != 0 ||
 		   !rounded_shape(renderer, rect, corners, color) {return false}
 	}
 	return true
@@ -53,7 +54,7 @@ rounded_shape :: proc(
 	POINTS :: 4 * (SEGMENTS + 1)
 	vertices: [POINTS * 2 + 1]sdl.Vertex
 	indices: [POINTS * 9]i32
-	tint := sdl.FColor{color[0] / 255, color[1] / 255, color[2] / 255, color[3] / 255}
+	tint := sdl.Color{u8(color[0]), u8(color[1]), u8(color[2]), u8(color[3])}
 	clear := tint
 	clear.a = 0
 	vertices[0] = {
@@ -95,5 +96,5 @@ rounded_shape :: proc(
 		len(vertices),
 		raw_data(indices[:]),
 		len(indices),
-	)
+	) == 0
 }

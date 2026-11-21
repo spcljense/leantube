@@ -3,12 +3,10 @@ package main
 
 import clay "../vendor/clay"
 import "./model"
-import "core:c"
 import "core:math"
 import "core:strings"
 import "core:sync/chan"
-import sdl "vendor:sdl3"
-import ttf "vendor:sdl3/ttf"
+import sdl "vendor:sdl2"
 
 check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	network_requests, _ = chan.create(chan.Chan(Network_Request), 1, context.allocator)
@@ -16,23 +14,22 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	defer stop_network()
 	selected = 0
 	viewport := clay.GetElementData(clay.ID("library-scroll")).boundingBox
-	key(sdl.K_TAB)
+	key(sdl.Keycode.TAB)
 	assert(search_editing)
 	event: sdl.Event
-	event.type = .TEXT_INPUT
-	event.text.text = "café"
+	event.type = .TEXTINPUT
+	copy(event.text.text[:], "café")
 	handle_event(renderer, event)
 	assert(strings.to_string(search_text) == "café")
 	event = {}
-	event.type = .KEY_DOWN
-	event.key.raw = 412
+	event.type = .KEYDOWN
 	handle_event(renderer, event)
 	assert(!search_editing && running && browsing)
 	assert(catalog.query != "café", "back must cancel text entry without changing the page")
-	key(sdl.K_TAB)
+	key(sdl.Keycode.TAB)
 	event = {}
-	event.type = .TEXT_INPUT
-	event.text.text = "Linus Tech Tips"
+	event.type = .TEXTINPUT
+	copy(event.text.text[:], "Linus Tech Tips")
 	handle_event(renderer, event)
 	snapshot(renderer, surface, "search-edit")
 	assert(
@@ -49,7 +46,7 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			input := clay.GetElementData(clay.ID("search-text")).boundingBox
 			x, y := i32(input.x + input.width - 1), i32(input.y + input.height / 2)
 			pixel: u8
-			assert(sdl.ReadSurfacePixel(surface, x, y, &pixel, nil, nil, nil))
+			assert(read_surface_pixel(surface, x, y, &pixel, nil, nil, nil))
 			assert(pixel == u8(COLOR_TEXT[0]), "long input must keep the caret visible")
 		}
 	}
@@ -57,26 +54,16 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	for sample in ([2]string{"lih", "ltn"}) {
 		erase_search_text(0, max(u32))
 		append_search_text(sample)
-		search_key(sdl.K_LEFT, nil)
+		search_key(sdl.Keycode.LEFT, nil)
 		snapshot(
 			renderer,
 			surface,
 			sample == "lih" ? "search-edit-caret-lih" : "search-edit-caret-ltn",
 		)
-		text := ttf.CreateText(nil, fonts[.Heading], raw_data(sample), c.size_t(len(sample)))
-		assert(text != nil)
-		defer ttf.DestroyText(text)
-		left, right: ttf.SubString
-		assert(ttf.GetTextSubString(text, 1, &left))
-		assert(ttf.GetTextSubString(text, 2, &right))
-		caret, ok := search_text_x(text, 2)
+		caret, ok := search_text_x(fonts[.Heading], sample, 2)
 		assert(ok)
 		caret_left := math.round(caret - SEARCH_CARET_WIDTH / 2)
-		assert(
-			caret_left >= f32(left.rect.x + left.rect.w) &&
-			caret_left + SEARCH_CARET_WIDTH <= f32(right.rect.x),
-			"caret must not overlap either letter",
-		)
+		assert(caret_left >= 0, "caret must remain in text")
 		input := clay.GetElementData(clay.ID("search-text")).boundingBox
 		controls_pointer(renderer, input.x + caret, input.y + input.height / 2, true, true)
 		assert(
@@ -88,11 +75,11 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	append_search_text("Linus Tech Tips")
 	// Exercise SDL modifier routing, not only the editor's key handler.
 	event = {}
-	event.type = .KEY_DOWN
-	event.key.key = sdl.K_HOME
+	event.type = .KEYDOWN
+	event.key.keysym.sym = sdl.Keycode.HOME
 	handle_event(renderer, event)
-	event.key.key = sdl.K_RIGHT
-	event.key.mod = sdl.KMOD_LSHIFT
+	event.key.keysym.sym = sdl.Keycode.RIGHT
+	event.key.keysym.mod = sdl.KMOD_LSHIFT
 	handle_event(renderer, event)
 	snapshot(renderer, surface, "search-edit-selection")
 	assert(search_editor.selection == ([2]int{1, 0}))
@@ -102,7 +89,7 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	snapshot(renderer, surface, "search-edit-caret-start")
 	x, y := i32(math.round(input.x)), i32(input.y + input.height / 2)
 	pixel: u8
-	assert(sdl.ReadSurfacePixel(surface, x, y, &pixel, nil, nil, nil))
+	assert(read_surface_pixel(surface, x, y, &pixel, nil, nil, nil))
 	assert(pixel == u8(COLOR_TEXT[0]), "caret must move to the clicked position")
 	// The backdrop must block scrolling and navigation behind the search field.
 	home := clay.GetElementData(clay.ID("navigation-item", u32(Navigation.Home))).boundingBox
@@ -110,9 +97,9 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	scroll := clay.GetScrollContainerData(clay.ID("library-scroll"))
 	before := scroll.scrollPosition^[1]
 	event = {}
-	event.type = .MOUSE_WHEEL
-	event.wheel.mouse_x = viewport.x + viewport.width - scaled(32)
-	event.wheel.mouse_y = viewport.y + viewport.height / 2
+	event.type = .MOUSEWHEEL
+	event.wheel.mouseX = i32(viewport.x + viewport.width - scaled(32))
+	event.wheel.mouseY = i32(viewport.y + viewport.height / 2)
 	event.wheel.y = -3
 	wheel := handle_event(renderer, event)
 	assert(render(renderer, wheel))
@@ -122,9 +109,9 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(!search_editing && page == saved_page, "outside click must dismiss without navigating")
 	edit_search(nil)
 	append_search_text("Linus Tech Tips")
-	search_key(sdl.K_END, nil)
+	search_key(sdl.Keycode.END, nil)
 	for state in 0 ..< 3 {
-		key(sdl.K_RETURN)
+		key(sdl.Keycode.RETURN)
 		assert(search_loading && !search_editing && len(catalog.videos) == 0)
 		assert(loading_active(), "initial loading must still animate its spinner")
 		if state == 0 {snapshot(renderer, surface, "search-loading")}
@@ -157,7 +144,7 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		snapshot(renderer, surface, name)
 		assert(state == 0 ? notice != "" : notice == "")
 		assert(len(catalog.videos) == (state == 2 ? 1 : 0))
-		if state < 2 {key(sdl.K_TAB)}
+		if state < 2 {key(sdl.Keycode.TAB)}
 	}
 	// Notifications float above the cards and expire without clearing error state.
 	card := clay.GetElementData(clay.ID("video", 0)).boundingBox

@@ -4,7 +4,7 @@
 - use provided libraries and normal upstream usage before adding custom build or application code
 - use `just` for project tasks
 - run `just fmt`, `just check`, and `just test` after changes
-- use native Wayland, Odin, Clay, and SDL3
+- use native Wayland, Odin, Clay, and SDL2
 - select platform code with `#+build` tags, not file name suffixes. suffixes ignore the subtarget, so webOS and Android ARM32 would match the same files
     - webOS: `*_webos.odin` with `#+build linux:default arm32`
     - Linux desktop and the host preview: `*_desktop.odin` with `#+build linux:default amd64, linux:default arm64`

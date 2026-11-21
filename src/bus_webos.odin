@@ -3,7 +3,7 @@ package main
 
 import "core:c"
 import "core:fmt"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 LS_Error :: struct {
 	error_code: c.int,

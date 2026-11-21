@@ -9,7 +9,7 @@ import "core:fmt"
 import "core:strings"
 import "core:sync/chan"
 import "core:thread"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // The UI and the web demo share the request and result channels. These
 // services exist only in native builds.
@@ -120,7 +120,7 @@ network_main :: proc(_: ^thread.Thread) {
 			if session_auth.access_token == "" {yt.set_access_token(""); continue}
 			refreshed := refresh_auth(&network_client, &session_auth)
 			refresh_at =
-				sdl.GetTicks() + u64(refreshed ? max(session_auth.expires_in - 60, 30) : 30) * 1000
+				u64(sdl.GetTicks()) + u64(refreshed ? max(session_auth.expires_in - 60, 30) : 30) * 1000
 			yt.set_access_token(session_auth.access_token)
 			name, avatar_url := yt.account_info(&network_client)
 			if name != "" {delete(session_auth.name); session_auth.name = name} else {delete(name)}
@@ -143,7 +143,7 @@ network_main :: proc(_: ^thread.Thread) {
 		case .Search, .Browse, .Card_Action, .Card_Membership, .Watch_History:
 			if request.kind == .Watch_History &&
 			   (request.account != session_account || session_auth.access_token == "") {continue}
-			if session_auth.access_token != "" && sdl.GetTicks() >= refresh_at {
+			if session_auth.access_token != "" && u64(sdl.GetTicks()) >= refresh_at {
 				refreshed := refresh_auth(&network_client, &session_auth)
 				if refreshed {
 					yt.set_access_token(session_auth.access_token)
@@ -157,7 +157,7 @@ network_main :: proc(_: ^thread.Thread) {
 						   ) {return}
 				}
 				refresh_at =
-					sdl.GetTicks() +
+					u64(sdl.GetTicks()) +
 					u64(refreshed ? max(session_auth.expires_in - 60, 30) : 30) * 1000
 			}
 			if request.kind == .Watch_History {

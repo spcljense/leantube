@@ -9,7 +9,7 @@ import "core:strings"
 import "core:sync/chan"
 import "core:testing"
 import "core:time"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 image_cache_fetch_calls: int
 image_cache_status: int
@@ -41,7 +41,7 @@ image_cache_reuses_original_bytes_and_recovers_from_bad_files :: proc(t: ^testin
 	surface := load_cached_image(cache, nil, source, fetch = image_cache_fetch)
 	if !testing.expect(t, surface != nil) {return}
 	testing.expect_value(t, surface.w, i32(101))
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 	stored, read_error := os.read_entire_file(path, context.allocator)
 	if !testing.expect(t, read_error == nil) {return}
 	defer delete(stored)
@@ -58,14 +58,14 @@ image_cache_reuses_original_bytes_and_recovers_from_bad_files :: proc(t: ^testin
 	)
 	if !testing.expect(t, surface != nil) {return}
 	testing.expect_value(t, surface.w, i32(32))
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 	testing.expect_value(t, image_cache_fetch_calls, 1)
 
 	if !testing.expect(t, os.write_entire_file(path, "broken image") == nil) {return}
 	image_cache_status = 200
 	surface = load_cached_image(cache, nil, source, fetch = image_cache_fetch)
 	if !testing.expect(t, surface != nil) {return}
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 	testing.expect_value(t, image_cache_fetch_calls, 2)
 
 	// HTTP errors with image bodies and invalid 200 bodies must not enter the cache.
@@ -85,7 +85,7 @@ image_cache_reuses_original_bytes_and_recovers_from_bad_files :: proc(t: ^testin
 
 @(test)
 cached_card_images_keep_card_order_after_worker_restart_without_network :: proc(t: ^testing.T) {
-	if !testing.expect(t, sdl.Init({.EVENTS})) {return}
+	if !testing.expect(t, sdl.Init({.EVENTS}) == 0) {return}
 	defer sdl.Quit()
 	directory, error := os.make_directory_temp("/tmp", "leantube-avatars-", context.allocator)
 	if !testing.expect(t, error == nil) {return}
@@ -97,7 +97,7 @@ cached_card_images_keep_card_order_after_worker_restart_without_network :: proc(
 	defer delete(cache_directory)
 	cache_path := strings.clone_to_cstring(cache_directory)
 	defer delete(cache_path)
-	if !testing.expect(t, sdl.CreateDirectory(cache_path)) {return}
+	if !testing.expect(t, os.make_directory_all(string(cache_path)) == nil) {return}
 	cache := Image_Cache {
 		directory     = cache_directory,
 		maximum_bytes = IMAGE_CACHE_BYTES,
@@ -118,12 +118,12 @@ cached_card_images_keep_card_order_after_worker_restart_without_network :: proc(
 		cache_source = channel,
 	)
 	if !testing.expect(t, surface != nil) {return}
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 	covers := [2]string{"https://images.example/cover-1", "https://images.example/cover-2"}
 	for source in covers {
 		surface = load_cached_image(cache, nil, source, fetch = image_cache_fetch)
 		if !testing.expect(t, surface != nil) {return}
-		sdl.DestroySurface(surface)
+		sdl.FreeSurface(surface)
 	}
 	testing.expect_value(t, image_cache_fetch_calls, 3)
 	// Each loader starts with no URL mappings. Disk hits must not need the network.
@@ -192,7 +192,7 @@ image_cache_evicts_oldest_downloads_and_ignores_storage_failure :: proc(t: ^test
 		surface := load_cached_image(cache, nil, source, fetch = image_cache_fetch)
 		delete(source)
 		if !testing.expect(t, surface != nil) {return}
-		sdl.DestroySurface(surface)
+		sdl.FreeSurface(surface)
 		stamp := time.unix(i64(i + 1), 0)
 		if !testing.expect(t, os.chtimes(paths[i], stamp, stamp) == nil) {return}
 	}
@@ -210,7 +210,7 @@ image_cache_evicts_oldest_downloads_and_ignores_storage_failure :: proc(t: ^test
 		fetch = image_cache_fetch,
 	)
 	if !testing.expect(t, surface != nil) {return}
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 }
 
 @(test)
@@ -244,7 +244,7 @@ image_cache_zero_budget_preserves_account_data :: proc(t: ^testing.T) {
 		fetch = image_cache_fetch,
 	)
 	if !testing.expect(t, surface != nil) {return}
-	sdl.DestroySurface(surface)
+	sdl.FreeSurface(surface)
 	testing.expect(t, !os.exists(image))
 	stored, read_error := os.read_entire_file(account, context.allocator)
 	defer delete(stored)

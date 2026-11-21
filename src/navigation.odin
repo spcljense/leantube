@@ -1,7 +1,7 @@
 package main
 
 import clay "../vendor/clay"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 Navigation :: enum {
 	Account,
@@ -65,7 +65,7 @@ activate_navigation :: proc(item: Navigation, window: ^sdl.Window = nil) {
 
 navigation_key :: proc(code: sdl.Keycode, window: ^sdl.Window) -> bool {
 	if !rail_focus {
-		if code == sdl.K_LEFT && selected % grid_columns == 0 {
+		if code == sdl.Keycode.LEFT && selected % grid_columns == 0 {
 			rail_focus = true
 			rail_cursor = rail_active
 			dirty = true
@@ -73,18 +73,18 @@ navigation_key :: proc(code: sdl.Keycode, window: ^sdl.Window) -> bool {
 		}
 		return false
 	}
-	switch code {
-	case sdl.K_UP:
+	#partial switch code {
+	case sdl.Keycode.UP:
 		rail_cursor = Navigation(max(0, int(rail_cursor) - 1))
-	case sdl.K_DOWN:
+	case sdl.Keycode.DOWN:
 		rail_cursor = Navigation(min(int(Navigation.Liked), int(rail_cursor) + 1))
-	case sdl.K_RIGHT:
+	case sdl.Keycode.RIGHT:
 		rail_focus = false
 		channel_focus = len(catalog.channel.tabs) > 0
 		library_focus_pending = true
-	case sdl.K_RETURN, sdl.K_SPACE, sdl.K_KP_ENTER:
+	case sdl.Keycode.RETURN, sdl.Keycode.SPACE, sdl.Keycode.KP_ENTER:
 		activate_navigation(rail_cursor, window)
-	case sdl.K_ESCAPE, sdl.K_AC_BACK:
+	case sdl.Keycode.ESCAPE, sdl.Keycode.AC_BACK:
 		rail_focus = false
 	case:
 		return false

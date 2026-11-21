@@ -10,7 +10,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:sync"
 import "core:sys/posix"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 APP_ID :: #config(APP_ID, "org.hyperpuncher.leantube")
 APP_VERSION :: #config(APP_VERSION, "dev")
@@ -57,10 +57,8 @@ reply :: proc "c" (_: rawptr, message: rawptr, _: rawptr) -> bool {
 }
 
 main :: proc() {
-	_ = sdl.SetHint("SDL_WEBOS_LEGACY_SEAT", "1")
 	benchmark_reader_entry()
-	_ = sdl.SetHint(sdl.HINT_VIDEO_DRIVER, "wayland")
-	_ = sdl.SetAppMetadata("LeanTube", APP_VERSION, APP_ID)
+	_ = sdl.SetHint(sdl.HINT_VIDEODRIVER, "wayland")
 	setup_logging()
 	_ = os.remove(CONTROL_STATE)
 	if len(os.args) > 1 {
@@ -115,29 +113,29 @@ main :: proc() {
 		}
 	}
 	if !register_application() {return}
-	start := sdl.GetTicks()
-	for !registered && sdl.GetTicks() - start < 3000 {poll_services(); sdl.Delay(10)}
+	start := u64(sdl.GetTicks())
+	for !registered && u64(sdl.GetTicks()) - start < 3000 {poll_services(); sdl.Delay(10)}
 	if !registered {fmt.eprintln("registration failed"); return}
-	if !sdl.Init({.VIDEO}) {fmt.eprintln("SDL init failed:", sdl.GetError()); return}
+	if sdl.Init({.VIDEO}) != 0 {fmt.eprintln("SDL init failed:", sdl.GetError()); return}
 	window = create_window()
 	if window == nil {fmt.eprintln("window failed:", sdl.GetError()); return}
-	properties := sdl.GetWindowProperties(window)
+	wm: sdl.SysWMinfo
+	if !bool(sdl.GetWindowWMInfo(window, &wm)) {fmt.eprintln("window info failed:", sdl.GetError()); return}
 	if !attach_window(
 		APP_ID,
-		sdl.GetPointerProperty(properties, sdl.PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nil),
-		sdl.GetPointerProperty(properties, sdl.PROP_WINDOW_WAYLAND_SURFACE_POINTER, nil),
+		wm.info.wl.display,
+		wm.info.wl.surface,
 	) {fmt.eprintln("LG window role is unavailable"); return}
-	renderer = sdl.CreateRenderer(window, "opengles2")
+	renderer = sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	if renderer == nil {fmt.eprintln("renderer failed:", sdl.GetError()); return}
 	// Present on the panel's refresh so a frame is never shown half updated.
-	if !sdl.SetRenderVSync(renderer, 1) {fmt.eprintln("vsync is unavailable:", sdl.GetError())}
 	if !tv_clay_abi(
 		u32(size_of(clay.RenderCommand)),
 		u32(size_of(clay.ElementDeclaration)),
 		u32(size_of(clay.ErrorData)),
 	) {fmt.eprintln("Clay ABI mismatch"); return}
 	clay_memory = open_clay()
-	if !sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND) {return}
+	if sdl.SetRenderDrawBlendMode(renderer, sdl.BlendMode.BLEND) != 0 {return}
 	if !open_tv_cursor() {fmt.eprintln("cursor failed:", sdl.GetError())}
 	if !open_text(renderer) {fmt.eprintln("UI assets failed:", sdl.GetError()); return}
 	init_player()
@@ -150,7 +148,7 @@ main :: proc() {
 	}
 	if !render(renderer) {fmt.eprintln("frame failed:", sdl.GetError()); return}
 	fmt.println("video grid presented")
-	previous_frame := sdl.GetTicks()
+	previous_frame := u64(sdl.GetTicks())
 	for running && !window_closing && sync.atomic_load(&interrupted) == 0 {
 		poll_services()
 		if return_to_grid {stop_playback()}
@@ -166,13 +164,13 @@ main :: proc() {
 		}
 		poll_network(renderer)
 		poll_player()
-		poll_card_press(sdl.GetTicks())
+		poll_card_press(u64(sdl.GetTicks()))
 		poll_login_tick()
-		apply_pending_seek(sdl.GetTicks())
+		apply_pending_seek(u64(sdl.GetTicks()))
 		auto_skip_sponsor()
 		write_control_state()
 		expire_player_controls()
-		now := sdl.GetTicks()
+		now := u64(sdl.GetTicks())
 		expire_toast(now)
 		frame_dt := f32(min(now - previous_frame, 50)) / 1000
 		previous_frame = now

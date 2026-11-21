@@ -4,7 +4,7 @@ import clay "../vendor/clay"
 import "./model"
 import yt "./youtube"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 CARD_HOLD_MS :: 650
 card_press: struct {
@@ -220,14 +220,14 @@ activate_card_action :: proc() {
 }
 
 card_menu_key :: proc(code: sdl.Keycode) {
-	if code == sdl.K_ESCAPE || code == sdl.K_AC_BACK {dismiss_card_menu(); return}
+	if code == sdl.Keycode.ESCAPE || code == sdl.Keycode.AC_BACK {dismiss_card_menu(); return}
 	if card_menu_waiting || card_action_done_until != 0 {return}
-	switch code {
-	case sdl.K_UP:
+	#partial switch code {
+	case sdl.Keycode.UP:
 		card_menu_selected = max(0, card_menu_selected - 1)
-	case sdl.K_DOWN:
+	case sdl.Keycode.DOWN:
 		card_menu_selected = min(len(card_menu_actions) - 1, card_menu_selected + 1)
-	case sdl.K_RETURN, sdl.K_KP_ENTER, sdl.K_SPACE:
+	case sdl.Keycode.RETURN, sdl.Keycode.KP_ENTER, sdl.Keycode.SPACE:
 		activate_card_action()
 	}
 	dirty = true
@@ -358,7 +358,7 @@ apply_card_result :: proc(result: ^Network_Result) {
 				video.watch_later = action.remove ? .Absent : .Present
 			}
 		}
-		card_action_done_until = sdl.GetTicks() + 1000
+		card_action_done_until = u64(sdl.GetTicks()) + 1000
 	}
 	dirty = true
 }

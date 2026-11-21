@@ -5,7 +5,7 @@ import "./model"
 import "core:strings"
 import "core:sync/chan"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 search_input_replaces_the_old_query_and_back_cancels_editing :: proc(t: ^testing.T) {
@@ -18,7 +18,7 @@ search_input_replaces_the_old_query_and_back_cancels_editing :: proc(t: ^testing
 	testing.expect_value(t, strings.to_string(search_text), "old query")
 	append_search_text("café")
 	testing.expect_value(t, strings.to_string(search_text), "café")
-	search_key(sdl.K_AC_BACK, nil)
+	search_key(sdl.Keycode.AC_BACK, nil)
 	testing.expect(t, !search_editing)
 	testing.expect_value(t, catalog.query, "old query")
 	edit_search(nil)

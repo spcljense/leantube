@@ -2,7 +2,7 @@
 package main
 
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 remote_moves_between_rail_and_cards_without_changing_the_selected_card :: proc(t: ^testing.T) {
@@ -19,22 +19,22 @@ remote_moves_between_rail_and_cards_without_changing_the_selected_card :: proc(t
 	selected = 4
 	rail_focus = false
 	rail_active = .Search
-	testing.expect(t, !navigation_key(sdl.K_LEFT, nil))
+	testing.expect(t, !navigation_key(sdl.Keycode.LEFT, nil))
 	selected = 3
-	testing.expect(t, navigation_key(sdl.K_LEFT, nil))
+	testing.expect(t, navigation_key(sdl.Keycode.LEFT, nil))
 	testing.expect(t, rail_focus)
 	testing.expect_value(t, rail_cursor, .Search)
-	navigation_key(sdl.K_DOWN, nil)
+	navigation_key(sdl.Keycode.DOWN, nil)
 	testing.expect_value(t, rail_cursor, .Subscriptions)
-	for _ in 0 ..< 8 {navigation_key(sdl.K_DOWN, nil)}
+	for _ in 0 ..< 8 {navigation_key(sdl.Keycode.DOWN, nil)}
 	testing.expect_value(t, rail_cursor, .Liked)
-	for _ in 0 ..< 8 {navigation_key(sdl.K_UP, nil)}
+	for _ in 0 ..< 8 {navigation_key(sdl.Keycode.UP, nil)}
 	testing.expect_value(t, rail_cursor, .Account)
-	navigation_key(sdl.K_RIGHT, nil)
+	navigation_key(sdl.Keycode.RIGHT, nil)
 	testing.expect(t, !rail_focus)
 	testing.expect_value(t, selected, 3)
-	navigation_key(sdl.K_LEFT, nil)
+	navigation_key(sdl.Keycode.LEFT, nil)
 	testing.expect(t, rail_focus)
-	navigation_key(sdl.K_AC_BACK, nil)
+	navigation_key(sdl.Keycode.AC_BACK, nil)
 	testing.expect(t, running && !rail_focus)
 }

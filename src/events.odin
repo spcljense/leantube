@@ -1,58 +1,60 @@
 package main
 
 import clay "../vendor/clay"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 handle_event :: proc(renderer: ^sdl.Renderer, event: sdl.Event) -> (wheel: f32) {
 	#partial switch event.type {
 	case .QUIT:
 		running = false
-	case .WINDOW_EXPOSED, .WINDOW_PIXEL_SIZE_CHANGED:
+	case .WINDOWEVENT:
 		dirty = true
-	case .WINDOW_FOCUS_LOST:
-		card_press.active = false
-	case .KEY_DOWN:
-		code := input_key(event.key.raw, event.key.key)
-		ok := code == sdl.K_RETURN || code == sdl.K_KP_ENTER || code == sdl.K_SPACE
-		back := code == sdl.K_AC_BACK || code == sdl.K_ESCAPE
-		if (ok || back) && event.key.repeat {return}
+		if event.window.event == .FOCUS_LOST {card_press.active = false}
+	case .KEYDOWN:
+		code := input_key(u16(event.key.keysym.scancode), event.key.keysym.sym)
+		ok := code == sdl.Keycode.RETURN || code == sdl.Keycode.KP_ENTER || code == sdl.Keycode.SPACE
+		back := code == sdl.Keycode.AC_BACK || code == sdl.Keycode.ESCAPE
+		if (ok || back) && event.key.repeat != 0 {return}
 		clay.SetPointerState({-1, -1}, false)
 		if ok && can_press_card() {
-			if !card_press.active {begin_card_press(false, sdl.GetTicks())}
+			if !card_press.active {begin_card_press(false, u64(sdl.GetTicks()))}
 		} else {
 			card_press.active = false
-			key(code, sdl.GetRenderWindow(renderer), event.key.mod)
+			key(code, sdl.RenderGetWindow(renderer), event.key.keysym.mod)
 		}
-	case .KEY_UP:
-		code := input_key(event.key.raw, event.key.key)
-		if code == sdl.K_RETURN || code == sdl.K_KP_ENTER || code == sdl.K_SPACE {
-			finish_card_press(false, sdl.GetTicks())
+	case .KEYUP:
+		code := input_key(u16(event.key.keysym.scancode), event.key.keysym.sym)
+		if code == sdl.Keycode.RETURN || code == sdl.Keycode.KP_ENTER || code == sdl.Keycode.SPACE {
+			finish_card_press(false, u64(sdl.GetTicks()))
 		}
-	case .TEXT_INPUT:
-		if browsing {append_search_text(string(event.text.text))}
-	case .MOUSE_WHEEL:
+	case .TEXTINPUT:
+		if browsing {
+			text := event.text.text
+			append_search_text(string(cstring(&text[0])))
+		}
+	case .MOUSEWHEEL:
 		card_press.active = false
 		if browsing {
-			controls_pointer(renderer, event.wheel.mouse_x, event.wheel.mouse_y, false, false)
-			wheel = event.wheel.y
-			if event.wheel.direction == .FLIPPED {wheel = -wheel}
+			controls_pointer(renderer, f32(event.wheel.mouseX), f32(event.wheel.mouseY), false, false)
+			wheel = f32(event.wheel.y)
+			if event.wheel.direction != 0 {wheel = -wheel}
 		}
-	case .MOUSE_MOTION:
+	case .MOUSEMOTION:
 		controls_pointer(
 			renderer,
-			event.motion.x,
-			event.motion.y,
-			.LEFT in event.motion.state,
+			f32(event.motion.x),
+			f32(event.motion.y),
+			event.motion.state & sdl.BUTTON_LMASK != 0,
 			false,
 		)
-	case .MOUSE_BUTTON_DOWN:
+	case .MOUSEBUTTONDOWN:
 		if event.button.button == sdl.BUTTON_LEFT {
-			controls_pointer(renderer, event.button.x, event.button.y, true, true)
+			controls_pointer(renderer, f32(event.button.x), f32(event.button.y), true, true)
 		}
-	case .MOUSE_BUTTON_UP:
+	case .MOUSEBUTTONUP:
 		if event.button.button == sdl.BUTTON_LEFT {
-			controls_pointer(renderer, event.button.x, event.button.y, false, false)
-			finish_card_press(true, sdl.GetTicks())
+			controls_pointer(renderer, f32(event.button.x), f32(event.button.y), false, false)
+			finish_card_press(true, u64(sdl.GetTicks()))
 		}
 	}
 	return

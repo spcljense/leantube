@@ -26,7 +26,7 @@ package main
 
 import "base:runtime"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 WL_Text_Listener :: struct {
 	commit_string:           proc "c" (data, model: rawptr, serial: u32, text: cstring),
@@ -66,10 +66,10 @@ text_listener := WL_Text_Listener {
 start_text_input :: proc(window: ^sdl.Window) -> bool {
 	if window == nil {return true}
 	if keyboard_factory == nil || keyboard_seat == nil || window_surface == nil {return false}
-	if !sdl.StartTextInput(window) {return false}
+	sdl.StartTextInput()
 	if keyboard_model == nil {
 		keyboard_model = text_model_factory_create_text_model(keyboard_factory)
-		if keyboard_model == nil {_ = sdl.StopTextInput(window); return false}
+		if keyboard_model == nil {sdl.StopTextInput(); return false}
 		wl_proxy_add_listener(keyboard_model, &text_listener, nil)
 	}
 	text_input_window = window
@@ -96,7 +96,7 @@ update_text_input :: proc() {
 }
 stop_text_input :: proc(window: ^sdl.Window) {
 	hide_keyboard()
-	if window != nil {_ = sdl.StopTextInput(window)}
+	if window != nil {sdl.StopTextInput()}
 	text_input_window = nil
 }
 hide_keyboard :: proc() {
@@ -127,21 +127,21 @@ keyboard_keysym :: proc "c" (data, model: rawptr, serial, time, sym, state, mods
 	if !keyboard_active || state != 1 {return} 	// Pressed.
 	switch sym {
 	case 0xff0d:
-		search_key(sdl.K_RETURN, text_input_window)
+		search_key(sdl.Keycode.RETURN, text_input_window)
 	case 0xff08:
-		search_key(sdl.K_BACKSPACE, text_input_window)
+		search_key(sdl.Keycode.BACKSPACE, text_input_window)
 	case 0xffff:
-		search_key(sdl.K_DELETE, text_input_window)
+		search_key(sdl.Keycode.DELETE, text_input_window)
 	case 0xff51:
-		search_key(sdl.K_LEFT, text_input_window)
+		search_key(sdl.Keycode.LEFT, text_input_window)
 	case 0xff53:
-		search_key(sdl.K_RIGHT, text_input_window)
+		search_key(sdl.Keycode.RIGHT, text_input_window)
 	case 0xff50:
-		search_key(sdl.K_HOME, text_input_window)
+		search_key(sdl.Keycode.HOME, text_input_window)
 	case 0xff57:
-		search_key(sdl.K_END, text_input_window)
+		search_key(sdl.Keycode.END, text_input_window)
 	case 0xff1b:
-		search_key(sdl.K_ESCAPE, text_input_window)
+		search_key(sdl.Keycode.ESCAPE, text_input_window)
 	}
 }
 keyboard_leave :: proc "c" (data, model: rawptr) {

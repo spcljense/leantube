@@ -4,8 +4,8 @@ import clay "../vendor/clay"
 import "core:c"
 import "core:fmt"
 import "core:math"
-import sdl "vendor:sdl3"
-import img "vendor:sdl3/image"
+import sdl "vendor:sdl2"
+import img "vendor:sdl2/image"
 
 Icon :: enum {
 	Play,
@@ -50,7 +50,7 @@ icon_pixels: c.int
 // for the rounded edge coverage.
 upload_surface :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) -> ^sdl.Texture {
 	texture := sdl.CreateTextureFromSurface(renderer, surface)
-	if texture != nil && !sdl.SetTextureBlendMode(texture, sdl.BLENDMODE_BLEND) {
+	if texture != nil && sdl.SetTextureBlendMode(texture, sdl.BlendMode.BLEND) != 0 {
 		sdl.DestroyTexture(texture)
 		return nil
 	}
@@ -59,7 +59,7 @@ upload_surface :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) -> ^sdl.T
 
 load_texture :: proc(renderer: ^sdl.Renderer, path: cstring) -> ^sdl.Texture {
 	surface := img.Load(path)
-	defer sdl.DestroySurface(surface)
+	defer sdl.FreeSurface(surface)
 	return surface == nil ? nil : upload_surface(renderer, surface)
 }
 
@@ -69,14 +69,14 @@ open_icons :: proc(renderer: ^sdl.Renderer) -> bool {
 	close_icons()
 	for file, i in ICON_FILES {
 		path := fmt.caprintf("%s/icons/%s.svg", app_directory, file)
-		stream := sdl.IOFromFile(path, "rb")
+		stream := sdl.RWFromFile(path, "rb")
 		delete(path)
 		if stream == nil {return false}
-		surface := img.LoadSizedSVG_IO(stream, pixels, pixels)
-		_ = sdl.CloseIO(stream)
+		surface := img.LoadSizedSVG_RW(stream, pixels, pixels)
+		_ = sdl.RWclose(stream)
 		if surface == nil {return false}
 		icons[i] = sdl.CreateTextureFromSurface(renderer, surface)
-		sdl.DestroySurface(surface)
+		sdl.FreeSurface(surface)
 		if icons[i] == nil {return false}
 	}
 	icon_pixels = pixels

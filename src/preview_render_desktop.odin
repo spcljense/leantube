@@ -5,18 +5,18 @@ import clay "../vendor/clay"
 import "core:c"
 import "core:math"
 import "core:strings"
-import sdl "vendor:sdl3"
-import ttf "vendor:sdl3/ttf"
+import sdl "vendor:sdl2"
+import ttf "vendor:sdl2/ttf"
 
 check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	// An original opaque WebP must retain its dimensions and get smooth edges.
 	texture := load_texture(renderer, "tests/ui/cover.webp")
 	assert(texture != nil)
 	defer sdl.DestroyTexture(texture)
-	width, height: f32
-	assert(sdl.GetTextureSize(texture, &width, &height))
+	width, height: c.int
+	assert(sdl.QueryTexture(texture, nil, nil, &width, &height) == 0)
 	assert(width == 101 && height == 57, "WebP decoding must retain the source dimensions")
-	assert(set_color(renderer, {0, 0, 0, 255}) && sdl.RenderClear(renderer))
+	assert(set_color(renderer, {0, 0, 0, 255}) && sdl.RenderClear(renderer) == 0)
 	for i in 0 ..< 2 {
 		x := f32(16 + i * 96)
 		assert(
@@ -29,13 +29,13 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			),
 		)
 	}
-	assert(sdl.RenderPresent(renderer))
+	sdl.RenderPresent(renderer)
 	for i in 0 ..< 2 {
 		partial := 0
 		for y in 16 ..< 32 {
 			for x in 16 ..< 32 {
 				red: u8
-				assert(sdl.ReadSurfacePixel(surface, i32(x + i * 96), i32(y), &red, nil, nil, nil))
+				assert(read_surface_pixel(surface, i32(x + i * 96), i32(y), &red, nil, nil, nil))
 				if red > 0 && red < 255 {partial += 1}
 			}
 		}
@@ -43,7 +43,7 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	}
 	save_snapshot(surface, "rounded-edges")
 	// The gray track must not darken a completed bar at its rounded edge.
-	assert(set_color(renderer, COLOR_ACCENT) && sdl.RenderClear(renderer))
+	assert(set_color(renderer, COLOR_ACCENT) && sdl.RenderClear(renderer) == 0)
 	assert(
 		rounded_progress(
 			renderer,
@@ -53,11 +53,11 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			{0, 0, surface.w, surface.h},
 		),
 	)
-	assert(sdl.RenderPresent(renderer))
+	sdl.RenderPresent(renderer)
 	for x in 16 ..< 32 {
 		for y in 76 ..< 80 {
 			red, green, blue: u8
-			assert(sdl.ReadSurfacePixel(surface, i32(x), i32(y), &red, &green, &blue, nil))
+			assert(read_surface_pixel(surface, i32(x), i32(y), &red, &green, &blue, nil))
 			assert(
 				math.abs(i32(red) - i32(COLOR_ACCENT[0])) <= 1 &&
 				math.abs(i32(green) - i32(COLOR_ACCENT[1])) <= 1 &&
@@ -66,7 +66,7 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			)
 		}
 	}
-	assert(set_color(renderer, COLOR_BACKGROUND) && sdl.RenderClear(renderer))
+	assert(set_color(renderer, COLOR_BACKGROUND) && sdl.RenderClear(renderer) == 0)
 	assert(
 		rounded_progress(
 			renderer,
@@ -76,9 +76,9 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			{0, 0, surface.w, surface.h},
 		),
 	)
-	assert(sdl.RenderPresent(renderer))
+	sdl.RenderPresent(renderer)
 	red: u8
-	assert(sdl.ReadSurfacePixel(surface, 48, 80, &red, nil, nil, nil))
+	assert(read_surface_pixel(surface, 48, 80, &red, nil, nil, nil))
 	assert(red > 0, "fractional cover bounds must not cut off the bottom progress edge")
 }
 
@@ -87,8 +87,8 @@ check_cover_fill :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	texture := load_texture(renderer, "tests/ui/cover.jpg")
 	assert(texture != nil)
 	defer sdl.DestroyTexture(texture)
-	width, height: f32
-	assert(sdl.GetTextureSize(texture, &width, &height))
+	width, height: c.int
+	assert(sdl.QueryTexture(texture, nil, nil, &width, &height) == 0)
 	assert(width == 160 && height == 120, "JPEG decoding must retain the source dimensions")
 	commands: [2]clay.RenderCommand
 	for &command, i in commands {
@@ -97,7 +97,7 @@ check_cover_fill :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		command.renderData.image.imageData = rawptr(texture)
 		if i == 1 {command.renderData.image.cornerRadius = clay.CornerRadiusAll(12)}
 	}
-	assert(set_color(renderer, {0, 0, 0, 255}) && sdl.RenderClear(renderer))
+	assert(set_color(renderer, {0, 0, 0, 255}) && sdl.RenderClear(renderer) == 0)
 	assert(
 		render_commands(
 			renderer,
@@ -108,7 +108,7 @@ check_cover_fill :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		for point in ([][2]i32{{80, 2}, {80, 87}, {2, 45}, {157, 45}}) {
 			red: u8
 			assert(
-				sdl.ReadSurfacePixel(
+				read_surface_pixel(
 					surface,
 					i32(16 + i * 200) + point[0],
 					16 + point[1],
@@ -130,20 +130,20 @@ check_text_fitting :: proc() {
 		fit, owned := fit_text(fonts[.Small], sample, 160)
 		defer if owned {delete(fit)}
 		width: i32
-		assert(ttf.GetStringSize(fonts[.Small], raw_data(fit), len(fit), &width, nil))
+		assert(ttf.SizeUTF8(fonts[.Small], cstring(raw_data(fit)), &width, nil) == 0)
 		assert(width <= 160)
 		if owned {assert(strings.has_suffix(fit, "…"))} else {assert(fit == sample)}
 	}
 	// A dot leader is not an ASCII period. It must use the actual fallback glyph.
 	dot_font: ^ttf.Font
 	for fallback in fallback_fonts[.Caption] {
-		if fallback != nil && ttf.FontHasGlyph(fallback, 0x2024) {dot_font = fallback; break}
+		if fallback != nil && ttf.GlyphIsProvided32(fallback, 0x2024) != 0 {dot_font = fallback; break}
 	}
-	if dot_font != nil && !ttf.FontHasGlyph(fonts[.Caption], 0x2024) {
+	if dot_font != nil && ttf.GlyphIsProvided32(fonts[.Caption], 0x2024) == 0 {
 		dot: string : "․"
 		actual, expected: i32
-		assert(ttf.GetStringSize(fonts[.Caption], raw_data(dot), len(dot), &actual, nil))
-		assert(ttf.GetStringSize(dot_font, raw_data(dot), len(dot), &expected, nil))
+		assert(ttf.SizeUTF8(fonts[.Caption], cstring(raw_data(dot)), &actual, nil) == 0)
+		assert(ttf.SizeUTF8(dot_font, cstring(raw_data(dot)), &expected, nil) == 0)
 		assert(actual > 0 && actual == expected, "text measurement must use the fallback glyph")
 	}
 	continued, owned := fit_text(fonts[.Small], "short", 160, true)
@@ -155,7 +155,7 @@ check_text_fitting :: proc() {
 	advance: c.int
 	for digit in '0' ..= '9' {
 		width: c.int
-		assert(ttf.GetGlyphMetrics(fonts[.Body], u32(digit), nil, nil, nil, nil, &width))
+		assert(ttf.GlyphMetrics32(fonts[.Body], digit, nil, nil, nil, nil, &width) == 0)
 		if digit == '0' {advance = width}
 		assert(width == advance, "digits must not change width")
 	}
@@ -168,13 +168,9 @@ check_text_fitting :: proc() {
 	)
 	defer if wrapped_owned {delete(wrapped)}
 	assert(wrapped_lines == 2 && strings.has_suffix(wrapped, "…"))
-	line_height := c.int(ttf.GetFontHeight(fonts[.Small]))
-	probe := ttf.CreateText(text_engine, fonts[.Small], raw_data(wrapped), c.size_t(len(wrapped)))
-	assert(probe != nil)
-	assert(ttf.SetTextWrapWidth(probe, 400))
+	line_height := ttf.FontHeight(fonts[.Small])
 	wrapped_width, wrapped_height: c.int
-	assert(ttf.GetTextSize(probe, &wrapped_width, &wrapped_height))
-	ttf.DestroyText(probe)
+	assert(ttf.SizeUTF8(fonts[.Small], cstring(raw_data(wrapped)), &wrapped_width, &wrapped_height) == 0)
 	assert(wrapped_width <= 400)
 	assert(wrapped_height <= 2 * line_height, "a fitted title must wrap to two lines at most")
 	fits, fits_owned, fits_lines := fit_wrapped(fonts[.Small], "short title", 400, 2)

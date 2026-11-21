@@ -5,7 +5,7 @@ lightweight native YouTube client for webOS
 ## built with
 
 - [odin](https://odin-lang.org/)
-- [sdl3](https://www.libsdl.org/)
+- [sdl2](https://www.libsdl.org/)
 - [clay](https://github.com/nicbarker/clay)
 - [sponsorblock](https://sponsor.ajay.app/)
 

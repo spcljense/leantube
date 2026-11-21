@@ -11,7 +11,7 @@ import "core:encoding/json"
 import "core:strings"
 import "core:sync"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 PLAYBACK_BENCH :: #config(PLAYBACK_BENCH, false)
 
@@ -163,7 +163,7 @@ prepare_player :: proc(end: f64) {
 	}
 	player_clock, player_applied_rate, rate = 0, 1, 1
 	player_buffering, player_bound, player_eos = false, false, false
-	player_progress_at = sdl.GetTicks()
+	player_progress_at = u64(sdl.GetTicks())
 	paused, loaded, browsing, return_to_grid, running = false, false, false, false, true
 	timeline = {
 		seek_target_ms = -1,

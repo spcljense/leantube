@@ -4,7 +4,7 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 check_channel_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	saved_channel, saved_avatar := catalog.channel, channel_avatar
@@ -50,15 +50,15 @@ check_channel_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			"channel controls must fit the display",
 		)
 	}
-	key(sdl.K_UP)
+	key(sdl.Keycode.UP)
 	assert(channel_focus && !can_press_card(), "up from the first row must focus channel controls")
-	for _ in 0 ..< 5 {key(sdl.K_RIGHT)}
+	for _ in 0 ..< 5 {key(sdl.Keycode.RIGHT)}
 	assert(channel_cursor == 5)
 	snapshot(renderer, surface, "channel-focused")
 	focused := clay.GetElementData(clay.ID("channel-option", 5)).boundingBox
 	red, green, blue: u8
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(focused.x + focused.width / 2),
 			i32(focused.y + scaled(8)),
@@ -72,7 +72,7 @@ check_channel_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		red == u8(COLOR_ACCENT[0]) && green == u8(COLOR_ACCENT[1]) && blue == u8(COLOR_ACCENT[2]),
 		"remote focus must be visible on the active channel control",
 	)
-	key(sdl.K_DOWN)
+	key(sdl.Keycode.DOWN)
 	assert(
 		!channel_focus && selected == 0 && can_press_card(),
 		"down must return focus to the cards",

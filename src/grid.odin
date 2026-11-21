@@ -5,7 +5,7 @@ import "./model"
 import "core:c"
 import "core:math"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 library_focus_pending := true
 
@@ -301,7 +301,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 				) {
 					glyph: Icon = video.watch_later == .Present ? .Watch_Later_Saved : .Watch_Later
 					if video.cover_index == card_action_cover {
-						if card_menu_waiting {glyph = .Spinner} else if card_action_done_until > sdl.GetTicks() {glyph = .Check}
+						if card_menu_waiting {glyph = .Spinner} else if card_action_done_until > u64(sdl.GetTicks()) {glyph = .Check}
 					}
 					icon(glyph, 40)
 				}

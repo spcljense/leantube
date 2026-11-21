@@ -2,10 +2,11 @@ package main
 
 import clay "../vendor/clay"
 import "./model"
+import "core:c"
 import "core:fmt"
 import "core:hash"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // Retain visible feed images, not entire pages. SDL owns reference counting.
 IMAGE_TEXTURE_BYTES :: 64 * 1024 * 1024
@@ -29,7 +30,9 @@ image_key :: proc(source: string, target: i32) -> Image_Key {
 
 retain_image_texture :: proc(key: Image_Key, texture: ^sdl.Texture) {
 	if key == {} || texture == nil {return}
-	bytes := i64(texture.w) * i64(texture.h) * 4
+	width, height: c.int
+	if sdl.QueryTexture(texture, nil, nil, &width, &height) != 0 {return}
+	bytes := i64(width) * i64(height) * 4
 	if bytes > IMAGE_TEXTURE_BYTES {return}
 	if previous, found := &image_textures[key]; found {
 		if previous.texture == texture {
@@ -52,7 +55,6 @@ retain_image_texture :: proc(key: Image_Key, texture: ^sdl.Texture) {
 		sdl.DestroyTexture(entry.texture)
 		delete_key(&image_textures, oldest)
 	}
-	texture.refcount += 1
 	image_texture_tick += 1
 	image_textures[key] = {texture, bytes, image_texture_tick}
 	image_texture_bytes += bytes
@@ -64,7 +66,6 @@ take_image_texture :: proc(key: Image_Key) -> ^sdl.Texture {
 	if !found {return nil}
 	image_texture_tick += 1
 	entry.used = image_texture_tick
-	entry.texture.refcount += 1
 	return entry.texture
 }
 
@@ -99,13 +100,14 @@ preserve_catalog_images :: proc() {
 		video := catalog.videos[i]
 		card := clay.GetElementData(clay.ID("video", u32(i)))
 		box := card.boundingBox
+		card_rect := pixel_bounds({box.x, box.y, box.width, box.height})
 		visible: sdl.Rect
 		if !card.found ||
-		   !sdl.GetRectIntersection(
-				   pixel_bounds({box.x, box.y, box.width, box.height}),
-				   clip,
+		   !bool(sdl.IntersectRect(
+				   &card_rect,
+				   &clip,
 				   &visible,
-			   ) {continue}
+			   )) {continue}
 		index := video.cover_index
 		shown_first, shown_last = min(shown_first, index), max(shown_last, index + 1)
 		if index >= 0 && index < len(textures) {

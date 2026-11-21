@@ -6,7 +6,7 @@ import yt "./youtube"
 import "core:fmt"
 import "core:strings"
 import "core:sync/chan"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 Image_Request :: struct {
 	source:         string,
@@ -104,7 +104,7 @@ free_network_request :: proc(request: ^Network_Request) {
 free_network_result :: proc(result: ^Network_Result) {
 	model.catalog_destroy(&result.catalog)
 	model.card_actions_destroy(&result.actions)
-	sdl.DestroySurface(result.surface)
+	sdl.FreeSurface(result.surface)
 	delete(result.image_source)
 	yt.stream_destroy(&result.stream)
 	delete(result.segments)
@@ -159,7 +159,7 @@ resolve_selected :: proc(position_ms: f64 = 0, start_paused: bool = false) {
 	if selected < 0 || selected >= len(catalog.videos) {return}
 	clear_player_channel()
 	playback += 1
-	playback_requested_at = sdl.GetTicks()
+	playback_requested_at = u64(sdl.GetTicks())
 	resolving = true
 	browsing = false
 	loaded = false
@@ -222,7 +222,7 @@ apply_stream :: proc(renderer: ^sdl.Renderer, result: ^Network_Result) {
 show_player_channel :: proc(channel_id: string, placeholder: ^sdl.Texture = nil) {
 	if channel_id == "" {return}
 	player_channel_id = strings.clone(channel_id)
-	if placeholder != nil {placeholder.refcount += 1; player_channel_avatar = placeholder}
+	if placeholder != nil {player_channel_avatar = placeholder}
 	request := [1]Image_Request {
 		{
 			source = strings.clone(channel_id),

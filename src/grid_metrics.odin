@@ -1,6 +1,6 @@
 package main
 
-import ttf "vendor:sdl3/ttf"
+import ttf "vendor:sdl2/ttf"
 
 // Card geometry is known before layout, so offscreen rows can be omitted.
 Grid_Metrics :: struct {
@@ -25,9 +25,9 @@ grid_metrics :: proc() -> Grid_Metrics {
 		gap        = gap,
 		card_gap   = f32(spacing(8)),
 		text_gap   = f32(spacing(2)),
-		line       = f32(ttf.GetFontHeight(fonts[.Small])),
-		channel    = max(f32(ttf.GetFontHeight(fonts[.Caption])), scaled(CARD_AVATAR_SIZE + 8)),
-		meta       = f32(ttf.GetFontHeight(fonts[.Caption])),
+		line       = f32(ttf.FontHeight(fonts[.Small])),
+		channel    = max(f32(ttf.FontHeight(fonts[.Caption])), scaled(CARD_AVATAR_SIZE + 8)),
+		meta       = f32(ttf.FontHeight(fonts[.Caption])),
 		// Scrolls away, but leaves the same first-row inset as the old padding.
 		leading    = f32(spacing(32)),
 	}

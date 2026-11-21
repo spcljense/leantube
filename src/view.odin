@@ -3,7 +3,7 @@ package main
 import clay "../vendor/clay"
 import "core:c"
 import "core:math"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 view_width, view_height: f32
 ui_scale: f32 = 1
@@ -18,10 +18,10 @@ padding :: proc(left, right, top, bottom: u16) -> clay.Padding {
 
 refresh_view :: proc(renderer: ^sdl.Renderer) -> bool {
 	width, height: c.int
-	if !sdl.GetRenderOutputSize(renderer, &width, &height) {return false}
+	if sdl.GetRendererOutputSize(renderer, &width, &height) != 0 {return false}
 	scale := ui_scale // Offscreen tests provide the display scale explicitly.
-	if window := sdl.GetRenderWindow(renderer); window != nil {
-		scale = sdl.GetWindowDisplayScale(window)
+	if window := sdl.RenderGetWindow(renderer); window != nil {
+		scale = 1
 		if scale <= 0 {return false}
 	}
 	density_changed := view_width == 0 || ui_scale != scale

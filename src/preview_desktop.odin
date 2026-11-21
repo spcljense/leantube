@@ -8,7 +8,7 @@ import "core:math"
 import "core:os"
 import "core:strings"
 import "core:sync/chan"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 UI_TEST :: #config(UI_TEST, false)
 UI_SCREENSHOTS :: #config(UI_SCREENSHOTS, false)
@@ -34,24 +34,23 @@ main :: proc() {
 	renderer: ^sdl.Renderer
 	defer {
 		if renderer != nil {sdl.DestroyRenderer(renderer)}
-		if surface != nil {sdl.DestroySurface(surface)}
+		if surface != nil {sdl.FreeSurface(surface)}
 		if window != nil {sdl.DestroyWindow(window)}
 		sdl.Quit()
 	}
 	when !UI_TEST {
-		assert(sdl.SetHintWithPriority(sdl.HINT_VIDEO_DRIVER, "wayland", .OVERRIDE))
-		assert(sdl.SetHint(sdl.HINT_RENDER_DRIVER, "opengles2"))
-		assert(sdl.Init({.VIDEO}), string(sdl.GetError()))
+		assert(bool(sdl.SetHintWithPriority(sdl.HINT_VIDEODRIVER, "wayland", .OVERRIDE)))
+		assert(bool(sdl.SetHint(sdl.HINT_RENDER_DRIVER, "opengles2")))
+		assert(sdl.Init({.VIDEO}) == 0, string(sdl.GetError()))
 		assert(string(sdl.GetCurrentVideoDriver()) == "wayland")
 		assert(
 			sdl.CreateWindowAndRenderer(
-				"LeanTube · local UI preview (no playback)",
 				1280,
 				720,
-				{.RESIZABLE, .HIGH_PIXEL_DENSITY},
+				{.RESIZABLE},
 				&window,
 				&renderer,
-			),
+			) == 0,
 			string(sdl.GetError()),
 		)
 	} else {
@@ -59,12 +58,12 @@ main :: proc() {
 		if os.args[1] == "720p" {width, height = 1280, 720}
 		if os.args[1] == "1440p" {width, height = 2560, 1440}
 		if os.args[1] == "4k" {width, height, ui_scale = 3840, 2160, 2}
-		surface = sdl.CreateSurface(width, height, .RGBA32)
+		surface = create_surface(width, height)
 		assert(surface != nil)
 		renderer = sdl.CreateSoftwareRenderer(surface)
 		assert(renderer != nil)
 	}
-	assert(sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND))
+	assert(sdl.SetRenderDrawBlendMode(renderer, sdl.BlendMode.BLEND) == 0)
 	when UI_TEST {check_rounded_edges(renderer, surface)}
 	assert(open_text(renderer), string(sdl.GetError()))
 	defer close_text()
@@ -123,8 +122,8 @@ main :: proc() {
 			for &pixel in pixels {pixel = {shade, shade, shade, 255}}
 			textures[i] = sdl.CreateTexture(renderer, .RGBA32, .STATIC, 16, 9)
 			assert(textures[i] != nil)
-			assert(sdl.UpdateTexture(textures[i], nil, raw_data(pixels[:]), 16 * 4))
-			assert(sdl.SetTextureBlendMode(textures[i], sdl.BLENDMODE_BLEND))
+			assert(sdl.UpdateTexture(textures[i], nil, raw_data(pixels[:]), 16 * 4) == 0)
+			assert(sdl.SetTextureBlendMode(textures[i], sdl.BlendMode.BLEND) == 0)
 		}
 	}
 	memory := open_clay()
@@ -149,19 +148,19 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	)
 	assert(clay.PointerOver(clay.ID("video", 0)))
 	event: sdl.Event
-	event.type = .KEY_DOWN
-	event.key.key = sdl.K_RIGHT
+	event.type = .KEYDOWN
+	event.key.keysym.sym = sdl.Keycode.RIGHT
 	handle_event(renderer, event)
 	assert(selected == 1)
 	assert(!clay.PointerOver(clay.ID("video", 0)), "keyboard input must clear mouse hover")
-	key(sdl.K_LEFT)
+	key(sdl.Keycode.LEFT)
 	assert(!clay.GetElementData(clay.ID("search")).found)
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	assert(running && browsing, "short back at the root must not close the app")
 	check_watch_later_ui(renderer, surface)
 	check_text_fitting()
 	red, green, blue: u8
-	assert(sdl.ReadSurfacePixel(surface, 0, 0, &red, &green, &blue, nil))
+	assert(read_surface_pixel(surface, 0, 0, &red, &green, &blue, nil))
 	assert(red == 0 && green == 0 && blue == 0)
 	rail := clay.GetElementData(clay.ID("navigation")).boundingBox
 	assert(rail.x == 0 && rail.y == 0 && rail.height == view_height)
@@ -172,7 +171,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		previous_bottom = box.y + box.height
 	}
 	assert(previous_bottom <= view_height)
-	key(sdl.K_LEFT)
+	key(sdl.Keycode.LEFT)
 	assert(rail_focus && selected == 0)
 	snapshot(renderer, surface, "rail-focused")
 	search_tooltip := clay.GetElementData(clay.ID("navigation-tooltip", u32(Navigation.Search)))
@@ -182,7 +181,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	for distance, i in ([2]f32{3, 9}) {
 		box := search_tooltip.boundingBox
 		assert(
-			sdl.ReadSurfacePixel(
+			read_surface_pixel(
 				surface,
 				i32(box.x + box.width - scaled(8)),
 				i32(box.y + box.height + scaled(distance)),
@@ -205,7 +204,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(tooltip.found && tooltip.boundingBox.x > history.x + history.width)
 	assert(clay.GetElementData(clay.ID("video", 0)).boundingBox == grid_before_tooltip)
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(tooltip.boundingBox.x + scaled(4)),
 			i32(history.y + history.height / 2),
@@ -216,7 +215,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		),
 	)
 	assert(red == u8(COLOR_TEXT[0]), "the tooltip must draw above the library")
-	key(sdl.K_RIGHT)
+	key(sdl.Keycode.RIGHT)
 	assert(!rail_focus && selected == 0)
 	assert(render(renderer))
 	assert(!clay.GetElementData(clay.ID("navigation-tooltip", u32(Navigation.History))).found)
@@ -232,7 +231,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	first_cover := clay.GetElementData(clay.ID("cover", 0)).boundingBox
 	// Selection covers the caption area too, without an accent outline.
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(first.x + scaled(24)),
 			i32(first.y + first.height - scaled(6)),
@@ -248,7 +247,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		assert(avatar.width == scaled(40))
 		if avatar.y + avatar.height / 2 >= view_height {continue}
 		assert(
-			sdl.ReadSurfacePixel(
+			read_surface_pixel(
 				surface,
 				i32(avatar.x + avatar.width / 2),
 				i32(avatar.y + avatar.height / 2),
@@ -265,7 +264,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	// A full progress bar must leave the rounded corner clear.
 	for offset, i in ([2]f32{1, scaled(24)}) {
 		assert(
-			sdl.ReadSurfacePixel(
+			read_surface_pixel(
 				surface,
 				i32(completed_cover.x + offset),
 				i32(completed_cover.y + completed_cover.height - scaled(2)),
@@ -279,7 +278,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		assert(red == u8(expected[0]) && green == u8(expected[1]) && blue == u8(expected[2]))
 	}
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(first_cover.x + first_cover.width / 2),
 			i32(first_cover.y + first_cover.height - scaled(2)),
@@ -333,7 +332,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		ink, total: int
 		for x in int(chip.x) ..< int(chip.x + chip.width) {
 			r, g, b: u8
-			if !sdl.ReadSurfacePixel(surface, i32(x), i32(y), &r, &g, &b, nil) {continue}
+			if !read_surface_pixel(surface, i32(x), i32(y), &r, &g, &b, nil) {continue}
 			brightness := int(r) + int(g) + int(b)
 			total += brightness
 			if brightness > 360 {ink += 1}
@@ -374,7 +373,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	catalog.continuation = strings.clone("next-page")
 	for direction in ([]int{1, -1}) {
 		for step in 1 ..= 4 {
-			key(direction > 0 ? sdl.K_DOWN : sdl.K_UP)
+			key(direction > 0 ? sdl.Keycode.DOWN : sdl.Keycode.UP)
 			scroll := clay.GetScrollContainerData(clay.ID("library-scroll"))
 			before := scroll.scrollPosition^[1]
 			viewport := clay.GetElementData(clay.ID("library-scroll")).boundingBox
@@ -451,7 +450,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(!clay.GetElementData(clay.ID("load-more")).found)
 	first_cover = clay.GetElementData(clay.ID("cover", 0)).boundingBox
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(first_cover.x + first_cover.width / 2),
 			i32(first_cover.y + first_cover.height / 2),
@@ -510,7 +509,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(last.y >= viewport.y && last.y + last.height <= viewport.y + viewport.height)
 	scroll := clay.GetScrollContainerData(clay.ID("library-scroll"))
 	before_player := scroll.scrollPosition^[1]
-	key(sdl.K_RETURN)
+	key(sdl.Keycode.RETURN)
 	assert(!browsing && loaded && paused)
 	// The avatar arrives with the stream. Its slot must not move the title.
 	assert(render(renderer))
@@ -549,7 +548,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	for id, i in hover_ids {
 		box := clay.GetElementData(clay.ID(id)).boundingBox
 		assert(
-			sdl.ReadSurfacePixel(
+			read_surface_pixel(
 				surface,
 				i32(box.x + box.width / 2),
 				i32(box.y + scaled(4)),
@@ -567,7 +566,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		snapshot(renderer, surface, name)
 		delete(name)
 		assert(
-			sdl.ReadSurfacePixel(
+			read_surface_pixel(
 				surface,
 				i32(box.x + box.width / 2),
 				i32(box.y + scaled(4)),
@@ -589,7 +588,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(render(renderer))
 	panel := clay.GetElementData(clay.ID("controls")).boundingBox
 	track := clay.GetElementData(clay.ID("timeline-track")).boundingBox
-	key(sdl.K_RETURN)
+	key(sdl.Keycode.RETURN)
 	assert(!paused)
 	snapshot(renderer, surface, "player")
 	assert(track == clay.GetElementData(clay.ID("timeline-track")).boundingBox)
@@ -597,12 +596,12 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(track.width > view_width * 0.4, "the timeline must keep most of the row")
 	// Seek presses add up and move the knob at once. One seek follows them.
 	start := timeline.position_ms
-	for _ in 0 ..< 3 {key(sdl.K_RIGHT)}
+	for _ in 0 ..< 3 {key(sdl.Keycode.RIGHT)}
 	assert(timeline.seek_target_ms < 0 && shown_position() == start + 30000)
-	apply_pending_seek(sdl.GetTicks() + SEEK_SETTLE_MS)
+	apply_pending_seek(u64(sdl.GetTicks()) + SEEK_SETTLE_MS)
 	assert(!seek_pending.active && timeline.seek_target_ms == start + 30000)
 	model.seek_done(&timeline)
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	assert(return_to_grid)
 	stop_playback()
 	assert(browsing && !return_to_grid)

@@ -7,7 +7,7 @@ import "core:encoding/json"
 import "core:os"
 import "core:sync"
 import "core:sys/posix"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 CONTROL_STATE :: APP_TEMP_PREFIX + "-state.json"
 control_saved_at: u64
@@ -51,7 +51,7 @@ track_state :: proc(track: ^reader.Track, ranges: [][2]f64) -> Track_State {
 }
 
 write_control_state :: proc(stopped: bool = false) {
-	now := sdl.GetTicks()
+	now := u64(sdl.GetTicks())
 	if !stopped && now - control_saved_at < 200 && control_saved_at >= control_started_at {return}
 	control_saved_at = now
 	state := struct {

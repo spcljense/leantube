@@ -6,7 +6,7 @@ This software is based in part on the work of the FreeType Team.
 Portions of this software are copyright 2026 The FreeType Project
 (https://freetype.org). All rights reserved.
 
-SDL3, Wayland, libffi, and xkbcommon use the licenses in this directory.
+SDL2, Wayland, libffi, and xkbcommon use the licenses in this directory.
 The app includes private curl, OpenSSL, zlib, nghttp3, and ngtcp2 libraries.
 Their licenses are curl.txt, OpenSSL.txt, zlib.txt, nghttp3.txt, sfparse.txt,
 and ngtcp2.txt in the packaged licenses directory.

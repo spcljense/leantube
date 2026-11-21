@@ -13,7 +13,7 @@ import "core:sync"
 import "core:sys/posix"
 import "core:time"
 import curl "vendor:curl"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 decoder_entry :: proc(args: []string) -> (result: int) {
 	stage := 0
@@ -39,8 +39,7 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 	}
 	if posix.sigaction(.SIGTERM, &action, nil) != .OK ||
 	   posix.sigaction(.SIGINT, &action, nil) != .OK {return 3}
-	_ = sdl.SetHint(sdl.HINT_VIDEO_DRIVER, "wayland")
-	_ = sdl.SetAppMetadata("LeanTube", APP_VERSION, APP_ID)
+	_ = sdl.SetHint(sdl.HINT_VIDEODRIVER, "wayland")
 	path, path_error := os.get_executable_path(context.allocator)
 	if path_error != nil {return 3}
 	defer delete(path)
@@ -60,25 +59,26 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 	if os.set_env("EGL_PLATFORM", "wayland") != nil ||
 	   os.set_env("XDG_RUNTIME_DIR", "/tmp/xdg") != nil {return 3}
 	stage = 42
-	if !sdl.Init({.VIDEO}) {return 3}
+	if sdl.Init({.VIDEO}) != 0 {return 3}
 	defer sdl.Quit()
 	stage = 5
 	window := create_window()
 	if window == nil {return 3}
 	defer sdl.DestroyWindow(window)
-	props := sdl.GetWindowProperties(window)
+	wm: sdl.SysWMinfo
+	if !bool(sdl.GetWindowWMInfo(window, &wm)) {return 3}
 	if !attach_window(
 		APP_ID,
-		sdl.GetPointerProperty(props, sdl.PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nil),
-		sdl.GetPointerProperty(props, sdl.PROP_WINDOW_WAYLAND_SURFACE_POINTER, nil),
+		wm.info.wl.display,
+		wm.info.wl.surface,
 	) {return 3}
 	defer close_window()
-	renderer := sdl.CreateRenderer(window, "opengles2")
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	if renderer == nil {return 3}
 	defer sdl.DestroyRenderer(renderer)
 	_ = sdl.SetRenderDrawColor(renderer, 0, 0, 0, 0)
-	_ = sdl.RenderClear(renderer)
-	_ = sdl.RenderPresent(renderer)
+	_ = sdl.RenderClear(renderer) == 0
+	sdl.RenderPresent(renderer)
 	stage = 6
 	session := reader.open(links[0], links[1], o.reader)
 	if session == nil {return 3}
@@ -105,13 +105,13 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 		event: sdl.Event
 		for sdl.PollEvent(&event) {
 			if event.type == .QUIT ||
-			   event.type == .WINDOW_CLOSE_REQUESTED {sync.atomic_store(&interrupted, 1)}
-			if event.type == .KEY_DOWN && !event.key.repeat {
-				code := input_key(event.key.raw, event.key.key)
-				if code == sdl.K_ESCAPE ||
-				   code == sdl.K_AC_BACK {sync.atomic_store(&interrupted, 1)}
-				if code == sdl.K_SPACE || code == sdl.K_MEDIA_PLAY || code == sdl.K_MEDIA_PAUSE {
-					paused = code == sdl.K_MEDIA_PAUSE || (code == sdl.K_SPACE && !paused)
+			   event.type == .WINDOWEVENT && event.window.event == .CLOSE {sync.atomic_store(&interrupted, 1)}
+			if event.type == .KEYDOWN && event.key.repeat == 0 {
+				code := input_key(u16(event.key.keysym.scancode), event.key.keysym.sym)
+				if code == sdl.Keycode.ESCAPE ||
+				   code == sdl.Keycode.AC_BACK {sync.atomic_store(&interrupted, 1)}
+				if code == sdl.Keycode.SPACE || code == MEDIA_PLAY_KEY || code == MEDIA_PAUSE_KEY {
+					paused = code == MEDIA_PAUSE_KEY || (code == sdl.Keycode.SPACE && !paused)
 					if api != nil {if paused {sf_pause(api)} else if !buffering {sf_play(api)}}
 					fmt.printf("{{\"event\":\"decoder_pause\",\"paused\":%v}}\n", paused)
 				}

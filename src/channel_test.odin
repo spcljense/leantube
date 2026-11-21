@@ -6,7 +6,7 @@ import "./model"
 import "core:strings"
 import "core:sync/chan"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 channel_sort_keeps_header_and_back_restores_the_origin_feed :: proc(t: ^testing.T) {
@@ -104,7 +104,7 @@ channel_sort_keeps_header_and_back_restores_the_origin_feed :: proc(t: ^testing.
 	if !testing.expect_value(t, len(catalog.videos), 1) {return}
 	testing.expect_value(t, catalog.videos[0].title, "Popular video")
 
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	back, ready := chan.try_recv(network_requests)
 	if !testing.expect(t, ready) {return}
 	defer free_network_request(&back)

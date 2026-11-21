@@ -3,7 +3,7 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // Keep image slot IDs stable for replies that are still in flight.
 remove_catalog_card :: proc(cover: int) {

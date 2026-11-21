@@ -4,15 +4,16 @@ package main
 import "./model"
 import yt "./youtube"
 import "core:fmt"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 DEV_SMOKE :: #config(DEV_SMOKE, false)
 
-start_text_input :: proc(window: ^sdl.Window) -> bool {return(
-		window == nil ||
-		sdl.StartTextInput(window) \
-	)}
-stop_text_input :: proc(window: ^sdl.Window) {if window != nil {_ = sdl.StopTextInput(window)}}
+start_text_input :: proc(window: ^sdl.Window) -> bool {
+	if window == nil {return true}
+	sdl.StartTextInput()
+	return true
+}
+stop_text_input :: proc(window: ^sdl.Window) {if window != nil {sdl.StopTextInput()}}
 update_text_input :: proc() {}
 
 // The host has no LG media service. These are UI-only responses; no stream
@@ -67,7 +68,7 @@ run_dev :: proc(renderer: ^sdl.Renderer) {
 	)
 	assert(render(renderer), string(sdl.GetError()))
 	dirty = false
-	started := sdl.GetTicks()
+	started := u64(sdl.GetTicks())
 	for running {
 		wheel: f32
 		event: sdl.Event
@@ -77,11 +78,11 @@ run_dev :: proc(renderer: ^sdl.Renderer) {
 		) {wheel = handle_event(renderer, event)}
 		if return_to_grid {stop_playback()}
 		poll_network(renderer)
-		poll_card_press(sdl.GetTicks())
+		poll_card_press(u64(sdl.GetTicks()))
 		poll_login_tick()
-		apply_pending_seek(sdl.GetTicks())
+		apply_pending_seek(u64(sdl.GetTicks()))
 		expire_player_controls()
-		expire_toast(sdl.GetTicks())
+		expire_toast(u64(sdl.GetTicks()))
 		if timeline.seek_target_ms >= 0 {
 			timeline.position_ms = timeline.seek_target_ms
 			model.seek_done(&timeline)
@@ -91,7 +92,7 @@ run_dev :: proc(renderer: ^sdl.Renderer) {
 			dirty = false
 		}
 		if DEV_SMOKE {
-			assert(sdl.GetTicks() - started < 15000, "native search UI startup timed out")
+			assert(u64(sdl.GetTicks()) - started < 15000, "native search UI startup timed out")
 			if !search_loading {
 				assert(len(catalog.videos) > 0, "native search returned no videos")
 				for texture in textures {

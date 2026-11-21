@@ -4,7 +4,7 @@ package main
 import "./model"
 import "core:strings"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 card_hold_opens_actions_without_also_playing_on_release :: proc(t: ^testing.T) {
@@ -41,9 +41,9 @@ card_hold_opens_actions_without_also_playing_on_release :: proc(t: ^testing.T) {
 	poll_card_press(1000 + CARD_HOLD_MS)
 	testing.expect(t, card_menu && !loaded)
 	event: sdl.Event
-	event.type = .KEY_DOWN
-	event.key.key = sdl.K_RETURN
-	event.key.repeat = true
+	event.type = .KEYDOWN
+	event.key.keysym.sym = sdl.Keycode.RETURN
+	event.key.repeat = 1
 	handle_event(nil, event)
 	finish_card_press(false, 2000)
 	testing.expect(t, card_menu && !loaded)

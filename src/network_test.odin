@@ -4,11 +4,12 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import sb "./sponsorblock"
+import "core:c"
 import "core:os"
 import "core:strings"
 import "core:sync/chan"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 canceling_and_reopening_the_same_video_rejects_old_replies :: proc(t: ^testing.T) {
@@ -241,9 +242,9 @@ search_errors_empty_results_and_recovery_finish_loading :: proc(t: ^testing.T) {
 
 @(test)
 decoded_covers_upload_reuse_and_reject_stale_results :: proc(t: ^testing.T) {
-	output := sdl.CreateSurface(160, 120, .RGBA32)
+	output := create_surface(160, 120)
 	if !testing.expect(t, output != nil) {return}
-	defer sdl.DestroySurface(output)
+	defer sdl.FreeSurface(output)
 	renderer := sdl.CreateSoftwareRenderer(output)
 	if !testing.expect(t, renderer != nil) {return}
 	defer sdl.DestroyRenderer(renderer)
@@ -269,7 +270,7 @@ decoded_covers_upload_reuse_and_reject_stale_results :: proc(t: ^testing.T) {
 		image := decode_image(bytes)
 		delete(bytes)
 		if !testing.expect(t, image != nil) {return}
-		expected_width, expected_height := f32(image.w), f32(image.h)
+		expected_width, expected_height := i32(image.w), i32(image.h)
 		previous := textures[0]
 		chan.send(
 			network_results,
@@ -286,8 +287,8 @@ decoded_covers_upload_reuse_and_reject_stale_results :: proc(t: ^testing.T) {
 			continue
 		}
 		if !testing.expect(t, textures[0] != nil) {return}
-		width, height: f32
-		testing.expect(t, sdl.GetTextureSize(textures[0], &width, &height))
+		width, height: c.int
+		testing.expect(t, sdl.QueryTexture(textures[0], nil, nil, &width, &height) == 0)
 		testing.expect_value(t, width, expected_width)
 		testing.expect_value(t, height, expected_height)
 	}
@@ -312,10 +313,10 @@ decoded_covers_upload_reuse_and_reject_stale_results :: proc(t: ^testing.T) {
 			clear_image_requests()
 		} else {
 			testing.expect_value(t, textures[0], original)
-			testing.expect(
-				t,
-				sdl.RenderTexture(renderer, textures[0], nil, nil) && sdl.RenderPresent(renderer),
-			)
+			width, height: c.int
+			testing.expect(t, sdl.QueryTexture(textures[0], nil, nil, &width, &height) == 0)
+			rect := sdl.Rect{0, 0, width, height}
+			testing.expect(t, sdl.RenderCopy(renderer, textures[0], nil, &rect) == 0)
 			testing.expect(
 				t,
 				len(image_loader.pending) == 0,

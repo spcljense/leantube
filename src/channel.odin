@@ -3,7 +3,7 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 CARD_AVATAR_SIZE :: 32
 PLAYER_AVATAR_SIZE :: 48
@@ -137,23 +137,23 @@ channel_key :: proc(code: sdl.Keycode) -> bool {
 	count := len(catalog.channel.tabs) + len(catalog.channel.sorts)
 	if count == 0 {return false}
 	if !channel_focus {
-		if code != sdl.K_UP || selected >= grid_columns {return false}
+		if code != sdl.Keycode.UP || selected >= grid_columns {return false}
 		channel_focus = true
 		channel_cursor = clamp(channel_cursor, 0, count - 1)
 	} else {
-		switch code {
-		case sdl.K_LEFT:
+		#partial switch code {
+		case sdl.Keycode.LEFT:
 			if channel_cursor == 0 {
 				channel_focus = false
 				rail_focus = true
 				rail_cursor = rail_active
 			} else {channel_cursor -= 1}
-		case sdl.K_RIGHT:
+		case sdl.Keycode.RIGHT:
 			channel_cursor = min(count - 1, channel_cursor + 1)
-		case sdl.K_DOWN:
+		case sdl.Keycode.DOWN:
 			channel_focus = false
 			library_focus_pending = true
-		case sdl.K_RETURN, sdl.K_KP_ENTER, sdl.K_SPACE:
+		case sdl.Keycode.RETURN, sdl.Keycode.KP_ENTER, sdl.Keycode.SPACE:
 			activate_channel_option(channel_cursor)
 		case:
 			return false

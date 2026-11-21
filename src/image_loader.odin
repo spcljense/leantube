@@ -4,10 +4,11 @@ package main
 import "./http"
 import yt "./youtube"
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:thread"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 // Image downloads run beside the main network worker, so a slow API request
 // or one slow image does not hold back the covers on screen. On the B9, four
@@ -38,9 +39,7 @@ start_image_loader :: proc() -> bool {
 		directory     = image_loader.directory,
 		maximum_bytes = IMAGE_CACHE_BYTES,
 	}
-	path := strings.clone_to_cstring(image_loader.directory)
-	defer delete(path)
-	if !sdl.CreateDirectory(path) || !trim_image_cache(image_loader.cache) {
+	if os.make_directory_all(image_loader.directory) != nil || !trim_image_cache(image_loader.cache) {
 		fmt.eprintln("image cache is unavailable")
 	}
 	for &worker in image_loader.threads {

@@ -3,15 +3,15 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import sb "./sponsorblock"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 Control_Button :: struct {
 	id:   string,
 	icon: Icon,
 	key:  sdl.Keycode,
 }
-SLOWER_BUTTON :: Control_Button{"slower", .Slower, sdl.K_DOWN}
-FASTER_BUTTON :: Control_Button{"faster", .Faster, sdl.K_UP}
+SLOWER_BUTTON :: Control_Button{"slower", .Slower, sdl.Keycode.DOWN}
+FASTER_BUTTON :: Control_Button{"faster", .Faster, sdl.Keycode.UP}
 control_buttons := [?]Control_Button{SLOWER_BUTTON, FASTER_BUTTON}
 
 // The rate stepper is one light pill. It is muted like the other labels,
@@ -41,14 +41,13 @@ control_button :: proc(button: Control_Button) {
 
 controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: bool) {
 	point: clay.Vector2
-	if !sdl.RenderCoordinatesFromWindow(renderer, x, y, &point[0], &point[1]) {return}
 	clay.SetPointerState(point, down)
 	dirty = true
 	if login_screen {
 		if activate {
 			if clay.PointerOver(
 				clay.ID("login-search"),
-			) {leave_login(sdl.GetRenderWindow(renderer))}
+			) {leave_login(sdl.RenderGetWindow(renderer))}
 			if clay.PointerOver(clay.ID("login-retry")) {retry_login()}
 		}
 		return
@@ -90,7 +89,7 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 			if activate {
 				if clay.PointerOver(clay.ID("search")) {
 					search_pointer(point[0], sdl.GetModState() & sdl.KMOD_SHIFT != {})
-				} else {finish_search_input(sdl.GetRenderWindow(renderer))}
+				} else {finish_search_input(sdl.RenderGetWindow(renderer))}
 			}
 			return
 		}
@@ -98,7 +97,7 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 			if clay.PointerOver(clay.ID("navigation-item", u32(item))) {
 				if activate {
 					rail_focus = true
-					activate_navigation(item, sdl.GetRenderWindow(renderer))
+					activate_navigation(item, sdl.RenderGetWindow(renderer))
 				}
 				return
 			}
@@ -112,7 +111,7 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 				selected = i
 				rail_focus, channel_focus = false, false
 				if activate {
-					if search_editing {finish_search_input(sdl.GetRenderWindow(renderer))}
+					if search_editing {finish_search_input(sdl.RenderGetWindow(renderer))}
 					toggle_watch_later(video.id)
 				}
 				return
@@ -129,8 +128,8 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 				rail_focus = false
 				channel_focus = false
 				if activate {
-					if search_editing {finish_search_input(sdl.GetRenderWindow(renderer))}
-					begin_card_press(true, sdl.GetTicks())
+					if search_editing {finish_search_input(sdl.RenderGetWindow(renderer))}
+					begin_card_press(true, u64(sdl.GetTicks()))
 				}
 				break
 			}
@@ -404,13 +403,13 @@ player_layout :: proc(elapsed, total, speed, quality: string) {
 PLAYER_CONTROLS_MS :: 3000
 controls_until: u64
 
-show_player_controls :: proc() {controls_until = sdl.GetTicks() + PLAYER_CONTROLS_MS}
+show_player_controls :: proc() {controls_until = u64(sdl.GetTicks()) + PLAYER_CONTROLS_MS}
 
 player_controls_visible :: proc() -> bool {
 	return(
 		paused ||
 		!loaded ||
-		sdl.GetTicks() < controls_until ||
+		u64(sdl.GetTicks()) < controls_until ||
 		clay.PointerOver(clay.ID("controls")) ||
 		clay.PointerOver(clay.ID("player-header")) \
 	)

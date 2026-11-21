@@ -5,7 +5,7 @@ import yt "./youtube"
 import "core:encoding/json"
 import "core:math"
 import "core:strings"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 Control_Action :: enum {
 	None,
@@ -84,7 +84,7 @@ apply_control :: proc(window: ^sdl.Window = nil) {
 	if command.action == .None {return}
 	pending_control = {}
 	control_error = ""
-	control_started_at = sdl.GetTicks()
+	control_started_at = u64(sdl.GetTicks())
 	switch command.action {
 	case .Open:
 		if search_editing {finish_search_input(window)}

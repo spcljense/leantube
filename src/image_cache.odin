@@ -10,8 +10,9 @@ import "core:math"
 import "core:os"
 import "core:slice"
 import "core:strings"
-import sdl "vendor:sdl3"
-import img "vendor:sdl3/image"
+import "core:time"
+import sdl "vendor:sdl2"
+import img "vendor:sdl2/image"
 
 // Used only by the network worker. Keep the original encoded image bytes.
 IMAGE_CACHE_MIB :: #config(IMAGE_CACHE_MIB, 64)
@@ -34,26 +35,21 @@ trim_image_cache :: proc(cache: Image_Cache, incoming_bytes: i64 = 0) -> bool {
 	   cache.maximum_bytes < 0 ||
 	   incoming_bytes > cache.maximum_bytes {return false}
 	// SDL uses libc filesystem APIs; Odin's directory scan requires statx.
-	directory := strings.clone_to_cstring(cache.directory)
-	defer delete(directory)
-	count: c.int
-	names := sdl.GlobDirectory(directory, "*.image", {}, &count)
-	if names == nil {return false}
-	defer sdl.free(names)
+	files_info, read_error := os.read_all_directory_by_path(cache.directory, context.allocator)
+	if read_error != nil {return false}
+	defer os.file_info_slice_delete(files_info, context.allocator)
 	Entry :: struct {
 		path:     cstring,
 		size:     i64,
-		modified: sdl.Time,
+		modified: i64,
 	}
 	files: [dynamic]Entry
 	defer {for file in files {delete(file.path)}; delete(files)}
 	total := incoming_bytes
-	for i in 0 ..< count {
-		path := fmt.caprintf("%s/%s", cache.directory, cstring(names[i]))
-		info: sdl.PathInfo
-		if !sdl.GetPathInfo(path, &info) {delete(path); return false}
-		if info.type != .FILE {delete(path); continue}
-		append(&files, Entry{path, i64(info.size), info.modify_time})
+	for info in files_info {
+		if info.type != .Regular || !strings.has_suffix(info.name, ".image") {continue}
+		path := strings.clone_to_cstring(info.fullpath)
+		append(&files, Entry{path, i64(info.size), time.time_to_unix(info.modification_time)})
 		total += i64(info.size)
 	}
 	if total <= cache.maximum_bytes {return true}
@@ -70,10 +66,8 @@ cached_image_exists :: proc(cache: Image_Cache, source: string) -> bool {
 	path := image_cache_path(cache, source)
 	defer delete(path)
 	if path == "" {return false}
-	cpath := strings.clone_to_cstring(path)
-	defer delete(cpath)
-	info: sdl.PathInfo
-	return sdl.GetPathInfo(cpath, &info) && info.type == .FILE
+	info, error := os.stat(path, context.allocator)
+	return error == nil && info.type == .Regular
 }
 
 // Return owned pixels without resolving or downloading the image source.
@@ -124,15 +118,22 @@ load_cached_image :: proc(
 // Decode and prefilter on the worker. The result owns its pixels, not bytes.
 decode_image :: proc(bytes: []u8, target: i32 = 0) -> ^sdl.Surface {
 	if len(bytes) == 0 {return nil}
-	io := sdl.IOFromConstMem(raw_data(bytes), uint(len(bytes)))
+	_ = img.Init({.PNG, .JPG, .WEBP})
+	io := sdl.RWFromConstMem(raw_data(bytes), c.int(len(bytes)))
 	if io == nil {return nil}
-	surface := img.Load_IO(io, true)
+	surface := img.Load_RW(io, true)
 	for target > 0 && surface != nil && max(surface.w, surface.h) > target {
 		ratio := max(f32(0.5), f32(target) / f32(max(surface.w, surface.h)))
 		width := max(1, i32(math.round(f32(surface.w) * ratio)))
 		height := max(1, i32(math.round(f32(surface.h) * ratio)))
-		next := sdl.ScaleSurface(surface, width, height, .LINEAR)
-		sdl.DestroySurface(surface)
+		next := sdl.CreateRGBSurfaceWithFormat(0, width, height, 32, u32(sdl.PixelFormatEnum.RGBA32))
+		if next != nil {
+			if sdl.SoftStretchLinear(surface, nil, next, nil) != 0 {
+				sdl.FreeSurface(next)
+				next = nil
+			}
+		}
+		sdl.FreeSurface(surface)
 		surface = next
 	}
 	return surface

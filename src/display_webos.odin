@@ -8,7 +8,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:strings"
 import "core:sync"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 Acb_App_State :: enum c.int {
 	Initialized,
@@ -114,7 +114,7 @@ attach_display :: proc(
 ) -> bool {
 	update_display(video_data)
 	display_width, display_height = width, height
-	if bounds: sdl.Rect; sdl.GetDisplayBounds(sdl.GetPrimaryDisplay(), &bounds) {
+	if bounds: sdl.Rect; sdl.GetDisplayBounds(0, &bounds) == 0 {
 		destination_width, destination_height = bounds.w, bounds.h
 	}
 	if load_acb() {

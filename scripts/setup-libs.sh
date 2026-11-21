@@ -84,13 +84,14 @@ cmake -S "$root/src/curl" -B "$root/build/curl" -G Ninja \
 	-DCURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -DCURL_CA_PATH=none
 cmake --build "$root/build/curl" --parallel "$jobs"
 DESTDIR="$sysroot" cmake --install "$root/build/curl"
+trash -- "$root/build/platform"
 cmake -S scripts/platform -B "$root/build/platform" -G Ninja \
 	-DSOURCE_ROOT="$root/src" -DCMAKE_SYSTEM_NAME=Linux \
 	-DCMAKE_TOOLCHAIN_FILE="$WEBOS_SDK/share/buildroot/toolchainfile.cmake" \
 	-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache \
 	-DCMAKE_C_FLAGS="$cpu" -DCMAKE_CXX_FLAGS="$cpu"
 cmake --build "$root/build/platform" --parallel "$jobs"
-for library in SDL:SDL3 SDL_ttf:SDL3_ttf SDL_image:SDL3_image; do
+for library in SDL:SDL2-2.0 SDL_ttf:SDL2_ttf-2.0 SDL_image:SDL2_image-2.0; do
 	component=${library%%:*}
 	name=${library#*:}
 	cp -L "$root/build/platform/$component/lib$name.so.0" "$WEBOS_PLATFORM/runtime/"

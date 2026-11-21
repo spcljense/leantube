@@ -3,7 +3,7 @@ package main
 
 import "core:strings"
 import "core:testing"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 @(test)
 ime_deletion_preserves_utf8_and_rejects_invalid_ranges :: proc(t: ^testing.T) {
@@ -27,8 +27,8 @@ ime_deletion_preserves_utf8_and_rejects_invalid_ranges :: proc(t: ^testing.T) {
 	erase_search_text(0, max(u32))
 	testing.expect_value(t, strings.builder_len(search_text), 0)
 	append_search_text("café movie")
-	search_key(sdl.K_HOME, nil)
-	for _ in 0 ..< 3 {search_key(sdl.K_RIGHT, nil)}
+	search_key(sdl.Keycode.HOME, nil)
+	for _ in 0 ..< 3 {search_key(sdl.Keycode.RIGHT, nil)}
 	erase_search_text(0, 2)
 	append_search_text("!")
 	testing.expect_value(t, strings.to_string(search_text), "caf! movie")
@@ -39,19 +39,19 @@ search_keys_move_select_and_edit_complete_graphemes :: proc(t: ^testing.T) {
 	edit_search(nil)
 	defer close_search()
 	append_search_text("café")
-	search_key(sdl.K_LEFT, nil)
+	search_key(sdl.Keycode.LEFT, nil)
 	append_search_text("!")
 	testing.expect_value(t, strings.to_string(search_text), "caf!é")
-	search_key(sdl.K_DELETE, nil)
+	search_key(sdl.Keycode.DELETE, nil)
 	testing.expect_value(t, strings.to_string(search_text), "caf!")
-	search_key(sdl.K_HOME, nil)
-	search_key(sdl.K_RIGHT, nil)
-	search_key(sdl.K_RIGHT, nil, sdl.KMOD_LSHIFT)
+	search_key(sdl.Keycode.HOME, nil)
+	search_key(sdl.Keycode.RIGHT, nil)
+	search_key(sdl.Keycode.RIGHT, nil, sdl.KMOD_LSHIFT)
 	append_search_text("o")
 	testing.expect_value(t, strings.to_string(search_text), "cof!")
-	search_key(sdl.K_END, nil)
-	search_key(sdl.K_BACKSPACE, nil)
+	search_key(sdl.Keycode.END, nil)
+	search_key(sdl.Keycode.BACKSPACE, nil)
 	append_search_text("e\u0301")
-	search_key(sdl.K_BACKSPACE, nil)
+	search_key(sdl.Keycode.BACKSPACE, nil)
 	testing.expect_value(t, strings.to_string(search_text), "cof")
 }

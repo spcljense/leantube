@@ -5,7 +5,7 @@ import clay "../vendor/clay"
 import "./model"
 import sb "./sponsorblock"
 import "core:math"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 check_timeline_pixel :: proc(
 	surface: ^sdl.Surface,
@@ -16,7 +16,7 @@ check_timeline_pixel :: proc(
 	track := clay.GetElementData(clay.ID("timeline-track")).boundingBox
 	red, green, blue: u8
 	assert(
-		sdl.ReadSurfacePixel(
+		read_surface_pixel(
 			surface,
 			i32(track.x + track.width * fraction),
 			i32(track.y + track.height * vertical_fraction),

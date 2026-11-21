@@ -4,7 +4,7 @@ package main
 import clay "../vendor/clay"
 import "core:strings"
 import "core:sync/chan"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 check_login_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	// Device codes and replies are fixtures. No real account or request is used.
@@ -66,11 +66,11 @@ check_login_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(status.found && status.boundingBox.height > 0)
 	assert(status.boundingBox.y + status.boundingBox.height <= view_height)
 	assert(login_code == "" && login_qr == nil, "failed login must hide the expired code")
-	key(sdl.K_DOWN)
-	key(sdl.K_RETURN)
+	key(sdl.Keycode.DOWN)
+	key(sdl.Keycode.RETURN)
 	request, ready = chan.try_recv(network_requests)
 	assert(ready && request.kind == .Login_Start && login_code == "")
-	key(sdl.K_ESCAPE)
+	key(sdl.Keycode.ESCAPE)
 	assert(!login_screen && search_editing)
 	// A canceled request must not open the sign-in screen again.
 	chan.send(
@@ -114,10 +114,10 @@ check_account_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(clay.GetElementData(clay.ID("add-account")).found)
 	assert(clay.GetElementData(clay.ID("sign-out")).found)
 	account_menu_selected = 0
-	key(sdl.K_DOWN)
+	key(sdl.Keycode.DOWN)
 	assert(account_menu_selected == 1)
-	key(sdl.K_UP)
+	key(sdl.Keycode.UP)
 	assert(account_menu_selected == 0)
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	assert(!account_menu && running)
 }

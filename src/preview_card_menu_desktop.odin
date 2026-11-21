@@ -5,7 +5,7 @@ import clay "../vendor/clay"
 import "./model"
 import "core:strings"
 import "core:sync/chan"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 check_watch_later_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	saved_signed_in, saved_notice := signed_in, notice
@@ -41,7 +41,7 @@ check_watch_later_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	// Clicking a known overlay must submit one save, never start playback.
 	controls_pointer(renderer, x, y, true, true)
 	controls_pointer(renderer, x, y, true, true)
-	finish_card_press(true, sdl.GetTicks())
+	finish_card_press(true, u64(sdl.GetTicks()))
 	request, ok := chan.try_recv(network_requests)
 	assert(ok && request.kind == .Card_Action && request.action.target == "WL")
 	defer free_network_request(&request)
@@ -70,7 +70,7 @@ check_watch_later_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	poll_network(renderer)
 	assert(
 		notice == "" &&
-		card_action_done_until > sdl.GetTicks() &&
+		card_action_done_until > u64(sdl.GetTicks()) &&
 		!card_menu_waiting &&
 		!card_menu &&
 		browsing &&
@@ -119,7 +119,7 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		box.y + box.height <= view_height,
 	)
 	last := len(card_menu_actions) - 1
-	for _ in 0 ..< last {key(sdl.K_DOWN)}
+	for _ in 0 ..< last {key(sdl.Keycode.DOWN)}
 	snapshot(renderer, surface, "card-menu-last")
 	item := clay.GetElementData(clay.ID("card-action", u32(last)))
 	scroll := clay.GetElementData(clay.ID("card-menu-scroll"))
@@ -128,7 +128,7 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(row.height > 0 && row.width > 0 && viewport.height > 0)
 	assert(row.y >= viewport.y && row.y + row.height <= viewport.y + viewport.height)
 	assert(card_menu_selected == last && card_menu)
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	assert(!card_menu && browsing, "back must dismiss the popup without closing the library")
 
 	// A menu action replaces only its icon while pending and after success.
@@ -140,7 +140,7 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	open_card_menu()
 	assert(render(renderer))
 	box = clay.GetElementData(clay.ID("card-menu")).boundingBox
-	key(sdl.K_RETURN)
+	key(sdl.Keycode.RETURN)
 	request, ready := chan.try_recv(network_requests)
 	assert(ready && request.kind == .Card_Action && card_menu_waiting)
 	defer free_network_request(&request)
@@ -151,13 +151,13 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		Network_Result{kind = .Card_Action, page = page, index = request.index},
 	)
 	poll_network(renderer)
-	assert(card_menu && !card_menu_waiting && card_action_done_until > sdl.GetTicks())
+	assert(card_menu && !card_menu_waiting && card_action_done_until > u64(sdl.GetTicks()))
 	snapshot(renderer, surface, "card-menu-saved")
 	assert(clay.GetElementData(clay.ID("card-menu")).boundingBox == box)
-	key(sdl.K_RETURN)
+	key(sdl.Keycode.RETURN)
 	_, duplicate := chan.try_recv(network_requests)
 	assert(!duplicate, "the checkmark must not submit the action twice")
-	key(sdl.K_AC_BACK)
+	key(sdl.Keycode.AC_BACK)
 	_, reloaded := chan.try_recv(network_requests)
 	assert(!reloaded, "saving must not reload the feed")
 
@@ -194,15 +194,8 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	navigation := clay.GetElementData(clay.ID("navigation-item", u32(Navigation.Home)))
 	assert(navigation.found)
 	x, y: f32
-	assert(
-		sdl.RenderCoordinatesToWindow(
-			renderer,
-			navigation.boundingBox.x + navigation.boundingBox.width / 2,
-			navigation.boundingBox.y + navigation.boundingBox.height / 2,
-			&x,
-			&y,
-		),
-	)
+	x = navigation.boundingBox.x + navigation.boundingBox.width / 2
+	y = navigation.boundingBox.y + navigation.boundingBox.height / 2
 	controls_pointer(renderer, x, y, true, false)
 	poll_card_press(1000 + CARD_HOLD_MS)
 	assert(!card_press.active && !card_menu, "leaving the card must cancel its hold")

@@ -1,7 +1,7 @@
 package main
 
 import clay "../vendor/clay"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 TOAST_MS :: 3000
 toast_until: u64
@@ -9,7 +9,7 @@ toast_until: u64
 // Keep the error state after the notification leaves the screen.
 show_notice :: proc(message: string) {
 	notice = message
-	toast_until = sdl.GetTicks() + TOAST_MS
+	toast_until = u64(sdl.GetTicks()) + TOAST_MS
 	dirty = true
 }
 

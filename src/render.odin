@@ -6,8 +6,8 @@ import "base:runtime"
 import "core:c"
 import "core:fmt"
 import "core:math"
-import sdl "vendor:sdl3"
-import ttf "vendor:sdl3/ttf"
+import sdl "vendor:sdl2"
+import ttf "vendor:sdl2/ttf"
 
 clay_error :: proc "c" (error: clay.ErrorData) {
 	context = runtime.default_context()
@@ -20,15 +20,14 @@ measure_text :: proc "c" (
 	data: rawptr,
 ) -> clay.Dimensions {
 	font := fonts[Text_Style(config.fontId)]
-	if text.length == 0 {return {0, f32(ttf.GetFontHeight(font))}}
+	if text.length == 0 {return {0, f32(ttf.FontHeight(font))}}
 	width, height: c.int
-	if !ttf.GetStringSize(
+	if ttf.SizeUTF8(
 		font,
-		text.chars,
-		c.size_t(text.length),
+		cstring(text.chars),
 		&width,
 		&height,
-	) {running = false; return {}}
+	) != 0 {running = false; return {}}
 	return {f32(width), f32(height)}
 }
 // The app and preview share one Clay context with the same limits.
@@ -66,7 +65,7 @@ loading_active :: proc() -> bool {
 WHITE_PREVIEW :: #config(UI_WHITE, false)
 
 set_color :: proc(renderer: ^sdl.Renderer, color: clay.Color) -> bool {
-	return sdl.SetRenderDrawColor(renderer, u8(color[0]), u8(color[1]), u8(color[2]), u8(color[3]))
+	return sdl.SetRenderDrawColor(renderer, u8(color[0]), u8(color[1]), u8(color[2]), u8(color[3])) == 0
 }
 
 // Opaque fills skip the destination read. The software renderer otherwise
@@ -74,9 +73,9 @@ set_color :: proc(renderer: ^sdl.Renderer, color: clay.Color) -> bool {
 fill_rect :: proc(renderer: ^sdl.Renderer, rect: sdl.FRect, color: clay.Color) -> bool {
 	rect := rect
 	opaque := color[3] == 255
-	if opaque && !sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_NONE) {return false}
-	defer if opaque {_ = sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND)}
-	return set_color(renderer, color) && sdl.RenderFillRect(renderer, &rect)
+	if opaque && sdl.SetRenderDrawBlendMode(renderer, sdl.BlendMode.NONE) != 0 {return false}
+	defer if opaque {_ = sdl.SetRenderDrawBlendMode(renderer, sdl.BlendMode.BLEND)}
+	return set_color(renderer, color) && sdl.RenderFillRectF(renderer, &rect) == 0
 }
 
 // Render the fade at screen resolution. Subpixel alpha dithering must not
@@ -121,10 +120,10 @@ open_fade :: proc(renderer: ^sdl.Renderer, slot: int, height: f32) -> bool {
 	}
 	texture := sdl.CreateTexture(renderer, .RGBA32, .STATIC, columns, rows)
 	if texture == nil {return false}
-	if !sdl.UpdateTexture(texture, nil, raw_data(pixels), columns * 4) ||
-	   !sdl.SetTextureBlendMode(texture, sdl.BLENDMODE_BLEND) ||
-	   !sdl.SetTextureAlphaMod(texture, PLAYER_FADE_ALPHA) ||
-	   !sdl.SetTextureScaleMode(texture, .NEAREST) {
+	if sdl.UpdateTexture(texture, nil, raw_data(pixels), columns * 4) != 0 ||
+	   sdl.SetTextureBlendMode(texture, sdl.BlendMode.BLEND) != 0 ||
+	   sdl.SetTextureAlphaMod(texture, PLAYER_FADE_ALPHA) != 0 ||
+	   sdl.SetTextureScaleMode(texture, .Nearest) != 0 {
 		sdl.DestroyTexture(texture)
 		return false
 	}
@@ -147,14 +146,14 @@ player_fade :: proc(renderer: ^sdl.Renderer, id: string, flip: bool, extend: f32
 	if !open_fade(renderer, int(flip), box.height) {return false}
 	texture := fade_textures[int(flip)]
 	rect := sdl.FRect{box.x, box.y, box.width, box.height}
-	return sdl.RenderTextureTiled(renderer, texture, nil, 1, &rect)
+	return sdl.RenderCopyF(renderer, texture, nil, &rect) == 0
 }
 
 render :: proc(renderer: ^sdl.Renderer, wheel: f32 = 0, dt: f32 = 1.0 / 60) -> bool {
 	if !refresh_view(renderer) {return false}
 	if login_screen {
 		if login_code != "" {_ = ensure_login_qr(renderer)}
-		if !set_color(renderer, COLOR_BACKGROUND) || !sdl.RenderClear(renderer) {return false}
+		if !set_color(renderer, COLOR_BACKGROUND) || sdl.RenderClear(renderer) != 0 {return false}
 		clay.BeginLayout()
 		login_layout()
 		toast_layout()
@@ -166,7 +165,7 @@ render :: proc(renderer: ^sdl.Renderer, wheel: f32 = 0, dt: f32 = 1.0 / 60) -> b
 	when WHITE_PREVIEW {
 		if !browsing {color = {255, 255, 255, 255}}
 	}
-	if !set_color(renderer, color) || !sdl.RenderClear(renderer) {return false}
+	if !set_color(renderer, color) || sdl.RenderClear(renderer) != 0 {return false}
 	// Clay borrows these strings until the render commands have been drawn.
 	elapsed, total, speed, quality: string
 	// quality is a static label and must not be freed.
@@ -231,11 +230,13 @@ render_commands :: proc(
 	commands := input
 	used_texts: int
 	defer {
-		for value in rendered_text[used_texts:] {ttf.DestroyText(value)}
+		for value in rendered_text[used_texts:] {
+			if value.texture != nil {sdl.DestroyTexture(value.texture); value.texture = nil}
+		}
 		resize(&rendered_text, used_texts)
 	}
 	clips := make([dynamic]sdl.Rect)
-	defer {delete(clips); _ = sdl.SetRenderClipRect(renderer, nil)}
+	defer {delete(clips); _ = sdl.RenderSetClipRect(renderer, nil)}
 	append(&clips, sdl.Rect{0, 0, i32(view_width), i32(view_height)})
 	for i in 0 ..< commands.length {
 		command := clay.RenderCommandArray_Get(&commands, i)
@@ -246,9 +247,11 @@ render_commands :: proc(
 		   command.commandType == .Custom ||
 		   command.commandType == .Text {
 			visible: sdl.Rect
-			if !sdl.GetRectIntersection(
-				pixel_bounds(rect),
-				clips[len(clips) - 1],
+			pixel_rect := pixel_bounds(rect)
+			clip_copy := clips[len(clips) - 1]
+			if !sdl.IntersectRect(
+				&pixel_rect,
+				&clip_copy,
 				&visible,
 			) {continue}
 		}
@@ -283,18 +286,20 @@ render_commands :: proc(
 			}
 			if rect.w <= 0 || rect.h <= 0 {continue}
 			if texture == icons[.Spinner] {
-				if !sdl.RenderTextureRotated(
+				if sdl.RenderCopyExF(
 					renderer,
 					texture,
 					nil,
 					&rect,
-					f64(sdl.GetTicks() % 1000) * 0.36,
+					f64(u64(sdl.GetTicks()) % 1000) * 0.36,
 					nil,
-					.NONE,
-				) {return false}
+					sdl.RendererFlip.NONE,
+				) != 0 {return false}
 				continue
 			}
-			width, height := f32(texture.w), f32(texture.h)
+			texture_width, texture_height: c.int
+			if sdl.QueryTexture(texture, nil, nil, &texture_width, &texture_height) != 0 {continue}
+			width, height := f32(texture_width), f32(texture_height)
 			// Fill the destination without stretching. Crop only during drawing;
 			// the original texture and downloaded file remain unchanged.
 			scale := max(rect.w / width, rect.h / height)
@@ -313,14 +318,14 @@ render_commands :: proc(
 			} else {
 				tint := cast(^clay.Color)command.userData
 				if tint != nil &&
-				   !sdl.SetTextureColorMod(
+				   sdl.SetTextureColorMod(
 						   texture,
 						   u8(tint[0]),
 						   u8(tint[1]),
 						   u8(tint[2]),
-					   ) {return false}
-				drawn := sdl.RenderTexture(renderer, texture, &source, &rect)
-				if tint != nil && !sdl.SetTextureColorMod(texture, 255, 255, 255) {return false}
+					   ) != 0 {return false}
+				drawn := sdl.RenderCopyF(renderer, texture, nil, &rect) == 0
+				if tint != nil && sdl.SetTextureColorMod(texture, 255, 255, 255) != 0 {return false}
 				if !drawn {return false}
 			}
 		case .Custom:
@@ -369,26 +374,28 @@ render_commands :: proc(
 			defer if owned {delete(display)}
 			if display == "" {continue}
 			color := text.textColor
-			value := frame_text(used_texts, font, display)
+			value := frame_text(renderer, used_texts, font, display)
 			if value == nil {return false}
 			used_texts += 1
-			ok :=
-				ttf.SetTextColor(value, u8(color[0]), u8(color[1]), u8(color[2]), u8(color[3])) &&
-				ttf.DrawRendererText(value, math.round(box.x), math.round(box.y))
-			if !ok {return false}
+			if value.texture == nil {return false}
+			_ = sdl.SetTextureColorMod(value.texture, u8(color[0]), u8(color[1]), u8(color[2]))
+			_ = sdl.SetTextureAlphaMod(value.texture, u8(color[3]))
+			destination := sdl.FRect{math.round(box.x), math.round(box.y), f32(value.width), f32(value.height)}
+			if sdl.RenderCopyF(renderer, value.texture, nil, &destination) != 0 {return false}
 		case .ScissorStart:
 			parent := clips[len(clips) - 1]
 			next := pixel_bounds(rect)
 			if !command.renderData.clip.horizontal {next.x = parent.x; next.w = parent.w}
 			if !command.renderData.clip.vertical {next.y = parent.y; next.h = parent.h}
 			clipped: sdl.Rect
-			if !sdl.GetRectIntersection(parent, next, &clipped) {clipped = {}}
+			if !bool(sdl.IntersectRect(&parent, &next, &clipped)) {clipped = {}}
 			append(&clips, clipped)
-			if !sdl.SetRenderClipRect(renderer, &clipped) {return false}
+			if sdl.RenderSetClipRect(renderer, &clipped) != 0 {return false}
 		case .ScissorEnd:
 			resize(&clips, len(clips) - 1)
-			if !sdl.SetRenderClipRect(renderer, &clips[len(clips) - 1]) {return false}
+			if sdl.RenderSetClipRect(renderer, &clips[len(clips) - 1]) != 0 {return false}
 		}
 	}
-	return sdl.RenderPresent(renderer)
+	sdl.RenderPresent(renderer)
+	return true
 }

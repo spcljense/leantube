@@ -6,8 +6,8 @@ import "core:math"
 import "core:strings"
 import "core:text/edit"
 import "core:unicode/utf8"
-import sdl "vendor:sdl3"
-import ttf "vendor:sdl3/ttf"
+import sdl "vendor:sdl2"
+import ttf "vendor:sdl2/ttf"
 
 search_editing: bool
 search_text: strings.Builder
@@ -77,7 +77,7 @@ erase_search_text :: proc(index: i32, length: u32) {
 
 search_key :: proc(code: sdl.Keycode, window: ^sdl.Window, mods: sdl.Keymod = {}) -> bool {
 	if !search_editing {
-		if code == sdl.K_TAB || code == sdl.K_SLASH {
+		if code == sdl.Keycode.TAB || code == sdl.Keycode.SLASH {
 			edit_search(window)
 			return true
 		}
@@ -85,27 +85,27 @@ search_key :: proc(code: sdl.Keycode, window: ^sdl.Window, mods: sdl.Keymod = {}
 	}
 	shift := mods & sdl.KMOD_SHIFT != {}
 	command: edit.Command
-	switch code {
-	case sdl.K_ESCAPE, sdl.K_AC_BACK, sdl.K_DOWN:
+	#partial switch code {
+	case sdl.Keycode.ESCAPE, sdl.Keycode.AC_BACK, sdl.Keycode.DOWN:
 		finish_search_input(window)
-	case sdl.K_RETURN, sdl.K_KP_ENTER:
+	case sdl.Keycode.RETURN, sdl.Keycode.KP_ENTER:
 		if strings.trim_space(strings.to_string(search_text)) != "" {
 			start_search(strings.to_string(search_text))
 			finish_search_input(window)
 		}
-	case sdl.K_BACKSPACE:
+	case sdl.Keycode.BACKSPACE:
 		command = .Backspace
-	case sdl.K_DELETE:
+	case sdl.Keycode.DELETE:
 		command = .Delete
-	case sdl.K_LEFT:
+	case sdl.Keycode.LEFT:
 		command = shift ? .Select_Left : .Left
-	case sdl.K_RIGHT:
+	case sdl.Keycode.RIGHT:
 		command = shift ? .Select_Right : .Right
-	case sdl.K_HOME:
+	case sdl.Keycode.HOME:
 		command = shift ? .Select_Start : .Start
-	case sdl.K_END:
+	case sdl.Keycode.END:
 		command = shift ? .Select_End : .End
-	case sdl.K_A:
+	case sdl.Keycode.A:
 		if mods & sdl.KMOD_CTRL != {} {command = .Select_All}
 	}
 	if command != .None {
@@ -119,45 +119,32 @@ search_key :: proc(code: sdl.Keycode, window: ^sdl.Window, mods: sdl.Keymod = {}
 
 // SDL_ttf substring rectangles enclose ink, not insertion boundaries.
 // Center stops in the gaps between shaped clusters, not on a letter's edge.
-search_text_x :: proc(text: ^ttf.Text, at: int) -> (f32, bool) {
-	sub: ttf.SubString
-	width: c.int
-	if !ttf.GetTextSubString(text, i32(at), &sub) ||
-	   !ttf.GetTextSize(text, &width, nil) {return 0, false}
-	value := string(cstring(text.text))
-	rtl := sub.flags.direction == u8(ttf.Direction.RTL)
-	if at <= 0 {return rtl ? f32(width) : 0, true}
-	if at >= len(value) {return rtl ? 0 : f32(width), true}
-	if at > int(sub.offset) {
-		// A ligature can contain more than one editable grapheme.
-		before, _, _ := utf8.grapheme_count(value[sub.offset:at])
-		count, _, _ := utf8.grapheme_count(value[sub.offset:sub.offset + sub.length])
-		fraction := f32(before) / f32(count)
-		if rtl {fraction = 1 - fraction}
-		return f32(sub.rect.x) + fraction * f32(sub.rect.w), true
+search_text_x :: proc(font: ^ttf.Font, value: string, at: int) -> (f32, bool) {
+	if at <= 0 {return 0, true}
+	if at >= len(value) {
+		width: c.int
+		if ttf.SizeUTF8(font, cstring(raw_data(value)), &width, nil) != 0 {return 0, false}
+		return f32(width), true
 	}
-	previous: ttf.SubString
-	if !ttf.GetPreviousTextSubString(text, sub, &previous) {return 0, false}
-	if rtl {return f32(previous.rect.x + sub.rect.x + sub.rect.w) / 2, true}
-	return f32(previous.rect.x + previous.rect.w + sub.rect.x) / 2, true
+	width: c.int
+	prefix := value[:at]
+	if ttf.SizeUTF8(font, cstring(raw_data(prefix)), &width, nil) != 0 {return 0, false}
+	return f32(width), true
 }
 
 search_pointer :: proc(x: f32, extend: bool = false) {
 	value := strings.to_string(search_text)
 	at := 0
 	if value != "" {
-		text := ttf.CreateText(nil, fonts[.Heading], raw_data(value), c.size_t(len(value)))
-		if text == nil {return}
-		defer ttf.DestroyText(text)
 		box := clay.GetElementData(clay.ID("search-text")).boundingBox
 		point := x - math.round(box.x - search_scroll)
-		first, ok := search_text_x(text, 0)
+		first, ok := search_text_x(fonts[.Heading], value, 0)
 		if !ok {return}
 		nearest := math.abs(point - first)
 		it := utf8.decode_grapheme_iterator_make(value)
 		for part, grapheme in utf8.decode_grapheme_iterate(&it) {
 			boundary := grapheme.byte_index + len(part)
-			position, found := search_text_x(text, boundary)
+			position, found := search_text_x(fonts[.Heading], value, boundary)
 			if !found {return}
 			if distance := math.abs(point - position); distance < nearest {
 				at, nearest = boundary, distance
@@ -180,47 +167,52 @@ render_search_text :: proc(
 	box := clay.GetElementData(clay.ID("search-icon")).boundingBox
 	destination := sdl.FRect{box.x, box.y, box.width, box.height}
 	texture := icons[.Search]
-	if !sdl.SetTextureColorMod(
+	if sdl.SetTextureColorMod(
 		texture,
 		u8(COLOR_MUTED[0]),
 		u8(COLOR_MUTED[1]),
 		u8(COLOR_MUTED[2]),
-	) {return false}
+	) != 0 {return false}
 	defer _ = sdl.SetTextureColorMod(texture, 255, 255, 255)
-	if !sdl.RenderTexture(renderer, texture, nil, &destination) {return false}
+	if sdl.RenderCopyF(renderer, texture, nil, &destination) != 0 {return false}
 	value := strings.to_string(search_text)
-	text := frame_text(index, fonts[.Heading], value == "" ? "Search YouTube" : value)
+	text := frame_text(renderer, index, fonts[.Heading], value == "" ? "Search YouTube" : value)
 	if text == nil {return false}
-	caret, caret_ok := search_text_x(text, search_editor.selection[0])
-	anchor, anchor_ok := search_text_x(text, search_editor.selection[1])
-	width, height: c.int
-	if !caret_ok || !anchor_ok || !ttf.GetTextSize(text, &width, &height) {return false}
+	caret, caret_ok := search_text_x(fonts[.Heading], value, search_editor.selection[0])
+	anchor, anchor_ok := search_text_x(fonts[.Heading], value, search_editor.selection[1])
+	width, height := text.width, text.height
+	if !caret_ok || !anchor_ok {return false}
 	if value == "" {caret, anchor = 0, 0}
 	search_scroll = clamp(search_scroll, 0, max(0, f32(width) + SEARCH_CARET_WIDTH - rect.w))
 	if caret < search_scroll {search_scroll = caret}
 	if caret + SEARCH_CARET_WIDTH >
 	   search_scroll + rect.w {search_scroll = caret + SEARCH_CARET_WIDTH - rect.w}
 	visible: sdl.Rect
-	if !sdl.GetRectIntersection(clip, pixel_bounds(rect), &visible) {return true}
-	if !sdl.SetRenderClipRect(renderer, &visible) {return false}
+	clip_rect := pixel_bounds(rect)
+	clip_copy := clip
+	if !bool(sdl.IntersectRect(&clip_copy, &clip_rect, &visible)) {return true}
+	if sdl.RenderSetClipRect(renderer, &visible) != 0 {return false}
 	saved_clip := clip
-	defer _ = sdl.SetRenderClipRect(renderer, &saved_clip)
+	defer _ = sdl.RenderSetClipRect(renderer, &saved_clip)
 	x, y := math.round(rect.x - search_scroll), rect.y + (rect.h - f32(height)) / 2
 	if edit.has_selection(&search_editor) {
 		selection := sdl.FRect{x + min(caret, anchor), rect.y, math.abs(caret - anchor), rect.h}
 		if !set_color(renderer, COLOR_TRACK) ||
-		   !sdl.RenderFillRect(renderer, &selection) {return false}
+		   sdl.RenderFillRectF(renderer, &selection) != 0 {return false}
 	}
 	color := value == "" ? COLOR_MUTED : COLOR_TEXT
-	if !ttf.SetTextColor(text, u8(color[0]), u8(color[1]), u8(color[2]), u8(color[3])) ||
-	   !ttf.DrawRendererText(text, x, math.round(y)) {return false}
+	if text.texture == nil {return false}
+	_ = sdl.SetTextureColorMod(text.texture, u8(color[0]), u8(color[1]), u8(color[2]))
+	_ = sdl.SetTextureAlphaMod(text.texture, u8(color[3]))
+	text_destination := sdl.FRect{x, math.round(y), f32(text.width), f32(text.height)}
+	if sdl.RenderCopyF(renderer, text.texture, nil, &text_destination) != 0 {return false}
 	caret_rect := sdl.FRect {
 		max(rect.x, math.round(x + caret - SEARCH_CARET_WIDTH / 2)),
 		rect.y + (rect.h - f32(text_sizes[.Heading])) / 2,
 		SEARCH_CARET_WIDTH,
 		f32(text_sizes[.Heading]),
 	}
-	return set_color(renderer, COLOR_TEXT) && sdl.RenderFillRect(renderer, &caret_rect)
+	return set_color(renderer, COLOR_TEXT) && sdl.RenderFillRectF(renderer, &caret_rect) == 0
 }
 
 search_layout :: proc() {
@@ -268,7 +260,7 @@ search_layout :: proc() {
 				layout = {
 					sizing = {
 						width = clay.SizingGrow({}),
-						height = clay.SizingFixed(f32(ttf.GetFontHeight(fonts[.Heading]))),
+						height = clay.SizingFixed(f32(ttf.FontHeight(fonts[.Heading]))),
 					},
 				},
 				custom = {customData = &search_editor},

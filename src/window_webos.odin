@@ -3,29 +3,25 @@ package main
 
 import "base:runtime"
 import "core:fmt"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 create_window :: proc() -> ^sdl.Window {
-	_ = sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GL_CONTEXT_PROFILE_ES))
+	_ = sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GLprofile.ES))
 	_ = sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 2)
 	_ = sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, 0)
 	_ = sdl.GL_SetAttribute(.ALPHA_SIZE, 8)
-	properties := sdl.CreateProperties()
-	defer sdl.DestroyProperties(properties)
-	_ = sdl.SetBooleanProperty(
-		properties,
-		sdl.PROP_WINDOW_CREATE_WAYLAND_SURFACE_ROLE_CUSTOM_BOOLEAN,
-		true,
-	)
-	_ = sdl.SetBooleanProperty(properties, sdl.PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true)
-	_ = sdl.SetBooleanProperty(properties, sdl.PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true)
 	// webOS 3.5 rejects wl_surface.set_buffer_scale, so SDL must not request
 	// high pixel density. every tested compositor runs at scale 1 anyway.
 	bounds: sdl.Rect
-	if !sdl.GetDisplayBounds(sdl.GetPrimaryDisplay(), &bounds) {return nil}
-	_ = sdl.SetNumberProperty(properties, sdl.PROP_WINDOW_CREATE_WIDTH_NUMBER, i64(bounds.w))
-	_ = sdl.SetNumberProperty(properties, sdl.PROP_WINDOW_CREATE_HEIGHT_NUMBER, i64(bounds.h))
-	return sdl.CreateWindowWithProperties(properties)
+	if sdl.GetDisplayBounds(0, &bounds) != 0 {return nil}
+	return sdl.CreateWindow(
+		"LeanTube",
+		sdl.WINDOWPOS_UNDEFINED,
+		sdl.WINDOWPOS_UNDEFINED,
+		bounds.w,
+		bounds.h,
+		{.OPENGL, .BORDERLESS, .SHOWN},
+	)
 }
 
 WL_MINIMIZED :: 1

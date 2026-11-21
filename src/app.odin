@@ -1,7 +1,7 @@
 package main
 
 import "./model"
-import sdl "vendor:sdl3"
+import sdl "vendor:sdl2"
 
 running := true
 paused: bool
