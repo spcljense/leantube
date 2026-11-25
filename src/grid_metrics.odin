@@ -25,9 +25,9 @@ grid_metrics :: proc() -> Grid_Metrics {
 		gap        = gap,
 		card_gap   = f32(spacing(8)),
 		text_gap   = f32(spacing(2)),
-		line       = f32(ttf.FontHeight(fonts[.Small])),
-		channel    = max(f32(ttf.FontHeight(fonts[.Caption])), scaled(CARD_AVATAR_SIZE + 8)),
-		meta       = f32(ttf.FontHeight(fonts[.Caption])),
+		line       = f32(ttf.FontHeight(fonts[.Video_Title])),
+		channel    = max(f32(ttf.FontHeight(fonts[.Card_Metadata])), scaled(CARD_AVATAR_SIZE + 8)),
+		meta       = f32(ttf.FontHeight(fonts[.Card_Metadata])),
 		// Scrolls away, but leaves the same first-row inset as the old padding.
 		leading    = f32(spacing(32)),
 	}

@@ -41,7 +41,7 @@ check_watch_later_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	// Clicking a known overlay must submit one save, never start playback.
 	controls_pointer(renderer, x, y, true, true)
 	controls_pointer(renderer, x, y, true, true)
-	finish_card_press(true, u64(sdl.GetTicks()))
+	finish_card_press(true, sdl.GetTicks64())
 	request, ok := chan.try_recv(network_requests)
 	assert(ok && request.kind == .Card_Action && request.action.target == "WL")
 	defer free_network_request(&request)
@@ -70,7 +70,7 @@ check_watch_later_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	poll_network(renderer)
 	assert(
 		notice == "" &&
-		card_action_done_until > u64(sdl.GetTicks()) &&
+		card_action_done_until > sdl.GetTicks64() &&
 		!card_menu_waiting &&
 		!card_menu &&
 		browsing &&
@@ -151,7 +151,7 @@ check_card_menu_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		Network_Result{kind = .Card_Action, page = page, index = request.index},
 	)
 	poll_network(renderer)
-	assert(card_menu && !card_menu_waiting && card_action_done_until > u64(sdl.GetTicks()))
+	assert(card_menu && !card_menu_waiting && card_action_done_until > sdl.GetTicks64())
 	snapshot(renderer, surface, "card-menu-saved")
 	assert(clay.GetElementData(clay.ID("card-menu")).boundingBox == box)
 	key(sdl.Keycode.RETURN)

@@ -2,16 +2,27 @@
 package main
 
 import "base:runtime"
+import "core:c"
 import "core:fmt"
 import sdl "vendor:sdl2"
+
+init_tv_video :: proc() -> bool {
+	_ = sdl.SetHint(sdl.HINT_VIDEODRIVER, "wayland")
+	_ = sdl.SetHint(sdl.HINT_RENDER_DRIVER, "opengles2")
+	_ = sdl.SetHint(sdl.HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, "1")
+	_ = sdl.SetHint("SDL_LEANTUBE_WEBOS", "1")
+	return sdl.Init({.VIDEO}) == 0
+}
 
 create_window :: proc() -> ^sdl.Window {
 	_ = sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GLprofile.ES))
 	_ = sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 2)
 	_ = sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, 0)
+	_ = sdl.GL_SetAttribute(.RED_SIZE, 8)
+	_ = sdl.GL_SetAttribute(.GREEN_SIZE, 8)
+	_ = sdl.GL_SetAttribute(.BLUE_SIZE, 8)
 	_ = sdl.GL_SetAttribute(.ALPHA_SIZE, 8)
-	// webOS 3.5 rejects wl_surface.set_buffer_scale, so SDL must not request
-	// high pixel density. every tested compositor runs at scale 1 anyway.
+	_ = sdl.GL_SetAttribute(.DEPTH_SIZE, 0)
 	bounds: sdl.Rect
 	if sdl.GetDisplayBounds(0, &bounds) != 0 {return nil}
 	return sdl.CreateWindow(
@@ -22,6 +33,37 @@ create_window :: proc() -> ^sdl.Window {
 		bounds.h,
 		{.OPENGL, .BORDERLESS, .SHOWN},
 	)
+}
+
+// Use the drawable supplied by the compositor, including on TVs that
+// expose a 1080p UI surface on a 4K panel.
+window_ui_scale :: proc(_: ^sdl.Window, width, height: c.int) -> f32 {
+	scale := min(f32(width) / 1920, f32(height) / 1080)
+	return max(0.5, scale)
+}
+
+log_video_surface :: proc(window: ^sdl.Window) {
+	width, height: c.int
+	sdl.GetWindowSize(window, &width, &height)
+	channels: [4]c.int
+	for attr, i in ([4]sdl.GLattr{.RED_SIZE, .GREEN_SIZE, .BLUE_SIZE, .ALPHA_SIZE}) {
+		_ = sdl.GL_GetAttribute(attr, &channels[i])
+	}
+	fmt.printf(
+		"UI surface window=%dx%d drawable=%dx%d scale=%.2f RGBA=%d/%d/%d/%d\n",
+		width, height, i32(view_width), i32(view_height), ui_scale,
+		channels[0], channels[1], channels[2], channels[3],
+	)
+}
+
+attach_sdl_window :: proc(window: ^sdl.Window) -> bool {
+	wm: sdl.SysWMinfo
+	sdl.VERSION(&wm.version)
+	if !sdl.GetWindowWMInfo(window, &wm) || wm.subsystem != .WAYLAND {
+		fmt.eprintln("Wayland window info failed:", sdl.GetError())
+		return false
+	}
+	return attach_window(APP_ID, wm.info.wl.display, wm.info.wl.surface)
 }
 
 WL_MINIMIZED :: 1
@@ -99,8 +141,7 @@ attach_window :: proc(app_id: cstring, display, surface: rawptr) -> bool {
 	)
 	// Leave KEYS_EXIT unclaimed: webOS handles long-back exit.
 	wl_webos_shell_surface_set_state(window_shell_surface, WL_FULLSCREEN)
-	wl_display_flush(display)
-	return true
+	return wl_display_roundtrip(display) >= 0
 }
 
 raise_window :: proc() {

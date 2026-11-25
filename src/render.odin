@@ -6,6 +6,7 @@ import "base:runtime"
 import "core:c"
 import "core:fmt"
 import "core:math"
+import "core:slice"
 import sdl "vendor:sdl2"
 import ttf "vendor:sdl2/ttf"
 
@@ -19,15 +20,16 @@ measure_text :: proc "c" (
 	config: ^clay.TextElementConfig,
 	data: rawptr,
 ) -> clay.Dimensions {
+	context = runtime.default_context()
 	font := fonts[Text_Style(config.fontId)]
 	if text.length == 0 {return {0, f32(ttf.FontHeight(font))}}
 	width, height: c.int
-	if ttf.SizeUTF8(
+	if !measure_utf8(
 		font,
-		cstring(text.chars),
+		string(text.chars[:text.length]),
 		&width,
 		&height,
-	) != 0 {running = false; return {}}
+	) {running = false; return {}}
 	return {f32(width), f32(height)}
 }
 // The app and preview share one Clay context with the same limits.
@@ -82,7 +84,7 @@ fill_rect :: proc(renderer: ^sdl.Renderer, rect: sdl.FRect, color: clay.Color) -
 // be stretched into visible stripes.
 PLAYER_FADE_ALPHA :: 216 // 85% opacity in SDL's 8-bit alpha.
 fade_textures: [2]^sdl.Texture
-fade_heights: [2]i32
+fade_sizes: [2][2]i32
 
 bayer_value :: proc(x, y: int) -> u8 {
 	quad := [4]u8{0, 2, 3, 1}
@@ -95,27 +97,32 @@ bayer_value :: proc(x, y: int) -> u8 {
 }
 
 // Rebuild only when the layout size changes.
-open_fade :: proc(renderer: ^sdl.Renderer, slot: int, height: f32) -> bool {
+open_fade :: proc(renderer: ^sdl.Renderer, slot: int, width, height: f32) -> bool {
+	columns := max(1, i32(math.round(width)))
 	rows := max(2, i32(math.round(height)))
-	if fade_textures[slot] != nil && fade_heights[slot] == rows {return true}
+	size := [2]i32{columns, rows}
+	if fade_textures[slot] != nil && fade_sizes[slot] == size {return true}
 	if fade_textures[slot] != nil {
 		sdl.DestroyTexture(fade_textures[slot])
 		fade_textures[slot] = nil
 	}
-	// Tile the eight-pixel dither period, never stretch it horizontally.
-	columns :: 8
-	pixels := make([]u8, columns * int(rows) * 4)
+	// Bake the repeating eight-pixel pattern at the output width for SDL2.
+	pixels := make([]u8, int(columns) * int(rows) * 4)
 	defer delete(pixels)
 	for y in 0 ..< int(rows) {
-		// Bake the header flip so SDL can tile both fades directly.
+		// The header runs in the opposite direction from the bottom controls.
 		source_y := slot == 1 ? int(rows) - 1 - y : y
 		// Smoothstep with less than one alpha level of ordered dither.
 		t := f32(source_y) / f32(rows - 1)
 		alpha := t * t * (3 - 2 * t) * 255
-		for x in 0 ..< columns {
+		pattern: [8]u8
+		for &value, x in pattern {
 			threshold := (f32(bayer_value(x, source_y)) + 0.5) / 64
-			base := (y * columns + x) * 4
-			pixels[base + 3] = u8(clamp(alpha + threshold, 0, 255))
+			value = u8(clamp(alpha + threshold, 0, 255))
+		}
+		for x in 0 ..< int(columns) {
+			base := (y * int(columns) + x) * 4
+			pixels[base + 3] = pattern[x % len(pattern)]
 		}
 	}
 	texture := sdl.CreateTexture(renderer, .RGBA32, .STATIC, columns, rows)
@@ -127,7 +134,7 @@ open_fade :: proc(renderer: ^sdl.Renderer, slot: int, height: f32) -> bool {
 		sdl.DestroyTexture(texture)
 		return false
 	}
-	fade_textures[slot], fade_heights[slot] = texture, rows
+	fade_textures[slot], fade_sizes[slot] = texture, size
 	return true
 }
 
@@ -143,13 +150,18 @@ player_fade :: proc(renderer: ^sdl.Renderer, id: string, flip: bool, extend: f32
 	box := clay.GetElementData(clay.ID(id)).boundingBox
 	if !flip {box.y -= extend}
 	box.height += extend
-	if !open_fade(renderer, int(flip), box.height) {return false}
+	if !open_fade(renderer, int(flip), box.width, box.height) {return false}
 	texture := fade_textures[int(flip)]
 	rect := sdl.FRect{box.x, box.y, box.width, box.height}
 	return sdl.RenderCopyF(renderer, texture, nil, &rect) == 0
 }
 
-render :: proc(renderer: ^sdl.Renderer, wheel: f32 = 0, dt: f32 = 1.0 / 60) -> bool {
+render :: proc(
+	renderer: ^sdl.Renderer,
+	wheel: f32 = 0,
+	dt: f32 = 1.0 / 60,
+	before_present: proc(^sdl.Renderer) = nil,
+) -> bool {
 	if !refresh_view(renderer) {return false}
 	if login_screen {
 		if login_code != "" {_ = ensure_login_qr(renderer)}
@@ -218,7 +230,7 @@ render :: proc(renderer: ^sdl.Renderer, wheel: f32 = 0, dt: f32 = 1.0 / 60) -> b
 			load_more()
 		}
 	}
-	ok := render_commands(renderer, commands)
+	ok := render_commands(renderer, commands, before_present)
 	if ok && browsing {preserve_catalog_images()}
 	return ok
 }
@@ -226,13 +238,12 @@ render :: proc(renderer: ^sdl.Renderer, wheel: f32 = 0, dt: f32 = 1.0 / 60) -> b
 render_commands :: proc(
 	renderer: ^sdl.Renderer,
 	input: clay.ClayArray(clay.RenderCommand),
+	before_present: proc(^sdl.Renderer) = nil,
 ) -> bool {
 	commands := input
 	used_texts: int
 	defer {
-		for value in rendered_text[used_texts:] {
-			if value.texture != nil {sdl.DestroyTexture(value.texture); value.texture = nil}
-		}
+		release_rendered_text(used_texts, len(rendered_text))
 		resize(&rendered_text, used_texts)
 	}
 	clips := make([dynamic]sdl.Rect)
@@ -285,13 +296,14 @@ render_commands :: proc(
 				continue
 			}
 			if rect.w <= 0 || rect.h <= 0 {continue}
-			if texture == icons[.Spinner] {
+			if slice.contains(icons[.Spinner][:], texture) {
+				rect.x, rect.y = math.round(rect.x), math.round(rect.y)
 				if sdl.RenderCopyExF(
 					renderer,
 					texture,
 					nil,
 					&rect,
-					f64(u64(sdl.GetTicks()) % 1000) * 0.36,
+					f64(sdl.GetTicks64() % 1000) * 0.36,
 					nil,
 					sdl.RendererFlip.NONE,
 				) != 0 {return false}
@@ -323,8 +335,11 @@ render_commands :: proc(
 						   u8(tint[0]),
 						   u8(tint[1]),
 						   u8(tint[2]),
-					   ) != 0 {return false}
-				drawn := sdl.RenderCopyF(renderer, texture, nil, &rect) == 0
+						   ) != 0 {return false}
+				crop := pixel_bounds(source)
+				rect.x, rect.y = math.round(rect.x), math.round(rect.y)
+				rect.w, rect.h = math.round(rect.w), math.round(rect.h)
+				drawn := sdl.RenderCopyF(renderer, texture, &crop, &rect) == 0
 				if tint != nil && sdl.SetTextureColorMod(texture, 255, 255, 255) != 0 {return false}
 				if !drawn {return false}
 			}
@@ -396,6 +411,7 @@ render_commands :: proc(
 			if sdl.RenderSetClipRect(renderer, &clips[len(clips) - 1]) != 0 {return false}
 		}
 	}
+	if before_present != nil {before_present(renderer)}
 	sdl.RenderPresent(renderer)
 	return true
 }

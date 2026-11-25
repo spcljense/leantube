@@ -84,7 +84,11 @@ cmake -S "$root/src/curl" -B "$root/build/curl" -G Ninja \
 	-DCURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -DCURL_CA_PATH=none
 cmake --build "$root/build/curl" --parallel "$jobs"
 DESTDIR="$sysroot" cmake --install "$root/build/curl"
-trash -- "$root/build/platform"
+for sdl_patch in patches/sdl2-webos.patch patches/sdl2-webos-input.patch; do
+	if ! patch -d "$root/src/SDL" -p1 --reverse --force --silent --dry-run < "$sdl_patch"; then
+		patch -d "$root/src/SDL" -p1 --forward --batch < "$sdl_patch"
+	fi
+done
 cmake -S scripts/platform -B "$root/build/platform" -G Ninja \
 	-DSOURCE_ROOT="$root/src" -DCMAKE_SYSTEM_NAME=Linux \
 	-DCMAKE_TOOLCHAIN_FILE="$WEBOS_SDK/share/buildroot/toolchainfile.cmake" \

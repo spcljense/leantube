@@ -39,7 +39,6 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 	}
 	if posix.sigaction(.SIGTERM, &action, nil) != .OK ||
 	   posix.sigaction(.SIGINT, &action, nil) != .OK {return 3}
-	_ = sdl.SetHint(sdl.HINT_VIDEODRIVER, "wayland")
 	path, path_error := os.get_executable_path(context.allocator)
 	if path_error != nil {return 3}
 	defer delete(path)
@@ -59,23 +58,17 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 	if os.set_env("EGL_PLATFORM", "wayland") != nil ||
 	   os.set_env("XDG_RUNTIME_DIR", "/tmp/xdg") != nil {return 3}
 	stage = 42
-	if sdl.Init({.VIDEO}) != 0 {return 3}
+	if !init_tv_video() {return 3}
 	defer sdl.Quit()
 	stage = 5
 	window := create_window()
 	if window == nil {return 3}
 	defer sdl.DestroyWindow(window)
-	wm: sdl.SysWMinfo
-	if !bool(sdl.GetWindowWMInfo(window, &wm)) {return 3}
-	if !attach_window(
-		APP_ID,
-		wm.info.wl.display,
-		wm.info.wl.surface,
-	) {return 3}
 	defer close_window()
 	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	if renderer == nil {return 3}
 	defer sdl.DestroyRenderer(renderer)
+	if !attach_sdl_window(window) {return 3}
 	_ = sdl.SetRenderDrawColor(renderer, 0, 0, 0, 0)
 	_ = sdl.RenderClear(renderer) == 0
 	sdl.RenderPresent(renderer)
@@ -107,11 +100,11 @@ decoder_entry :: proc(args: []string) -> (result: int) {
 			if event.type == .QUIT ||
 			   event.type == .WINDOWEVENT && event.window.event == .CLOSE {sync.atomic_store(&interrupted, 1)}
 			if event.type == .KEYDOWN && event.key.repeat == 0 {
-				code := input_key(u16(event.key.keysym.scancode), event.key.keysym.sym)
+				code := input_key(event.key.keysym)
 				if code == sdl.Keycode.ESCAPE ||
 				   code == sdl.Keycode.AC_BACK {sync.atomic_store(&interrupted, 1)}
-				if code == sdl.Keycode.SPACE || code == MEDIA_PLAY_KEY || code == MEDIA_PAUSE_KEY {
-					paused = code == MEDIA_PAUSE_KEY || (code == sdl.Keycode.SPACE && !paused)
+				if code == sdl.Keycode.SPACE || code == sdl.Keycode.AUDIOPLAY || code == sdl.Keycode.PAUSE {
+					paused = code == sdl.Keycode.PAUSE || (code == sdl.Keycode.SPACE && !paused)
 					if api != nil {if paused {sf_pause(api)} else if !buffering {sf_play(api)}}
 					fmt.printf("{{\"event\":\"decoder_pause\",\"paused\":%v}}\n", paused)
 				}

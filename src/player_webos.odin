@@ -120,7 +120,7 @@ player_failed :: proc(stage: string = "native") {
 }
 
 recover_playback :: proc(stage: string) -> bool {
-	now := u64(sdl.GetTicks())
+	now := sdl.GetTicks64()
 	if player_clock < 5 ||
 	   player_recoveries >= PLAYER_RECOVERIES ||
 	   (player_recovery_at > 0 && now - player_recovery_at < 30_000) {return false}
@@ -174,7 +174,7 @@ load_video :: proc(
 	)
 	if player_reader == nil {player_failed(); return}
 	player_transition = {
-		started_ms = u64(sdl.GetTicks()),
+		started_ms = sdl.GetTicks64(),
 	}
 	player_clock = start / 1000
 	if signed_in {
@@ -191,7 +191,7 @@ load_video :: proc(
 	player_applied_rate = 1
 	player_bound, player_buffering, player_eos = false, false, false
 	player_last_play = 0
-	player_progress_at = u64(sdl.GetTicks())
+	player_progress_at = sdl.GetTicks64()
 	loaded, paused, browsing = false, start_paused, false
 	timeline = {
 		position_ms    = start,
@@ -232,7 +232,7 @@ stop_playback :: proc(from_recovery := false) {
 player_pause :: proc(value: bool) -> bool {
 	if player_reader == nil {return false}
 	if player_api != nil && value && !sf_pause(player_api) {return false}
-	now := u64(sdl.GetTicks())
+	now := sdl.GetTicks64()
 	if value {
 		report_player_history()
 	} else if paused && player_api != nil && legacy_plane && !player_buffering {
@@ -286,7 +286,7 @@ player_seek :: proc(target: f64) -> bool {
 	}
 	player_pending_seek = -1
 	player_transition = {
-		started_ms = u64(sdl.GetTicks()),
+		started_ms = sdl.GetTicks64(),
 	}
 	if player_api != nil && legacy_plane {
 		if !decoder_close(player_api, player_status) {return false}
@@ -326,7 +326,7 @@ player_seek :: proc(target: f64) -> bool {
 	player_buffering, player_eos = player_api != nil, false
 	loaded = false
 	player_last_play = 0
-	player_progress_at = u64(sdl.GetTicks())
+	player_progress_at = sdl.GetTicks64()
 	return true
 }
 
@@ -392,7 +392,7 @@ poll_player :: proc() {
 		stream_width, stream_height = int(v.width), int(v.height)
 	}
 	if player_api == nil {
-		if u64(sdl.GetTicks()) - player_progress_at > 45000 {player_failed("startup")}
+		if sdl.GetTicks64() - player_progress_at > 45000 {player_failed("startup")}
 		return
 	}
 	status := player_status
@@ -400,7 +400,7 @@ poll_player :: proc() {
 	if sync.atomic_load(&status.loaded) != 0 && !player_bound {
 		if !display_started() {player_failed("display"); return}
 		player_bound = true
-		player_transition.loaded_ms = u64(sdl.GetTicks()) - player_transition.started_ms
+		player_transition.loaded_ms = sdl.GetTicks64() - player_transition.started_ms
 	}
 	frame := sync.atomic_load(&status.frame_ns)
 	if !player_buffering && !paused && frame >= 0 && starved {
@@ -419,7 +419,7 @@ poll_player :: proc() {
 	if player_bound &&
 	   rate != player_applied_rate &&
 	   !player_rate(rate) {player_failed("rate"); return}
-	now := u64(sdl.GetTicks())
+	now := sdl.GetTicks64()
 	if !paused &&
 	   !player_buffering &&
 	   now - player_last_play >= 250 &&

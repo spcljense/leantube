@@ -17,7 +17,7 @@ player_channel_avatar: ^sdl.Texture
 clear_player_channel :: proc() {
 	delete(player_channel_id); player_channel_id = ""
 	if player_channel_avatar != nil {
-		sdl.DestroyTexture(player_channel_avatar)
+		release_image_texture(player_channel_avatar)
 		player_channel_avatar = nil
 	}
 }

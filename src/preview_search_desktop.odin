@@ -23,6 +23,7 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(strings.to_string(search_text) == "café")
 	event = {}
 	event.type = .KEYDOWN
+	event.key.keysym.scancode = .AC_BACK
 	handle_event(renderer, event)
 	assert(!search_editing && running && browsing)
 	assert(catalog.query != "café", "back must cancel text entry without changing the page")
@@ -60,7 +61,7 @@ check_search_flow :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			surface,
 			sample == "lih" ? "search-edit-caret-lih" : "search-edit-caret-ltn",
 		)
-		caret, ok := search_text_x(fonts[.Heading], sample, 2)
+		caret, ok := search_text_x(fonts[.Search_Input], sample, 2)
 		assert(ok)
 		caret_left := math.round(caret - SEARCH_CARET_WIDTH / 2)
 		assert(caret_left >= 0, "caret must remain in text")

@@ -1,6 +1,6 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load
-export PATH := "node_modules/.bin:" + env_var("PATH")
+export PATH := "node_modules/.bin:" + env_var_or_default("WEBOS_TOOLCHAIN", ".cache/toolchain") + "/odin:" + env_var("PATH")
 
 app_id := `jq -r .id app/appinfo.json`
 app_version := `jq -r .version app/appinfo.json`
@@ -39,7 +39,9 @@ test-reader-http:
 host-qr:
 	mkdir -p build/host-qr
 	CCACHE_DIR="$PWD/.cache/ccache" ccache cc -c vendor/qrcodegen/qrcodegen.c -std=c11 -O2 -o build/host-qr/qrcodegen.o
+	CCACHE_DIR="$PWD/.cache/ccache" ccache cc -c src/native/image_files.c -std=gnu11 -O2 -o build/host-qr/image_files.o
 	ar rcs build/host-qr/qrcodegen.a build/host-qr/qrcodegen.o
+	ar rcs build/host-qr/image_files.a build/host-qr/image_files.o
 
 # Test deferred display metadata without a TV.
 test-native:
@@ -69,7 +71,7 @@ test-tv-http:
 fmt:
 	odinfmt src -w
 	odinfmt tests -w
-	clang-format -i src/native/bridge.c src/native/clay.c src/native/foreign.c tests/native/fixture.c
+	clang-format -i src/native/bridge.c src/native/clay.c src/native/foreign.c src/native/image_files.c tests/native/fixture.c
 	bun fmt
 
 # Provision the toolchain, then build native libraries. No TV access.

@@ -63,11 +63,11 @@ start_login :: proc(add := false) {
 
 poll_login_tick :: proc() {
 	if !login_screen || login_waiting || login_next_poll == 0 {return}
-	if u64(sdl.GetTicks()) < login_next_poll {return}
+	if sdl.GetTicks64() < login_next_poll {return}
 	login_waiting = true
 	if !submit_network({kind = .Login_Poll}) {
 		login_waiting = false
-		login_next_poll = u64(sdl.GetTicks()) + login_interval_ms
+		login_next_poll = sdl.GetTicks64() + login_interval_ms
 	}
 }
 
@@ -77,7 +77,7 @@ open_login_screen :: proc(code, url: string, interval: int) {
 	delete(login_code); login_code = strings.clone(code)
 	delete(login_url); login_url = strings.clone(url)
 	login_interval_ms = u64(max(interval, 1)) * 1000
-	login_next_poll = u64(sdl.GetTicks()) + login_interval_ms
+	login_next_poll = sdl.GetTicks64() + login_interval_ms
 	delete(login_message)
 	login_message = strings.clone("Waiting for approval…")
 	if login_qr != nil {sdl.DestroyTexture(login_qr); login_qr = nil}
@@ -564,7 +564,7 @@ apply_auth_result :: proc(renderer: ^sdl.Renderer, result: ^Network_Result) {
 		if !login_screen {return}
 		login_waiting = false
 		login_interval_ms = u64(max(result.login_interval, 1)) * 1000
-		login_next_poll = u64(sdl.GetTicks()) + login_interval_ms
+		login_next_poll = sdl.GetTicks64() + login_interval_ms
 		dirty = true
 	case .Login_Authorized:
 		if !login_screen {return}

@@ -43,11 +43,16 @@ labels_build :: proc(metrics: Grid_Metrics) {
 	resize(&card_labels, len(textures))
 	for video in catalog.videos {
 		if video.cover_index < first_cover {continue}
-		title, title_owned, title_lines := fit_wrapped(fonts[.Small], video.title, c.int(width), 2)
+		title, title_owned, title_lines := fit_wrapped(
+			fonts[.Video_Title],
+			video.title,
+			c.int(width),
+			2,
+		)
 		channel_width :=
 			width - (model.video_channel_id(video) != "" ? scaled(CARD_AVATAR_SIZE + 16) : 0)
-		channel, channel_owned := fit_text(fonts[.Caption], video.channel, c.int(channel_width))
-		meta, meta_owned := fit_text(fonts[.Caption], video.meta, c.int(width))
+		channel, channel_owned := fit_text(fonts[.Card_Metadata], video.channel, c.int(channel_width))
+		meta, meta_owned := fit_text(fonts[.Card_Metadata], video.meta, c.int(width))
 		card_labels[video.cover_index] = {
 			title       = title_owned ? title : strings.clone(title),
 			channel     = channel_owned ? channel : strings.clone(channel),
@@ -301,7 +306,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 				) {
 					glyph: Icon = video.watch_later == .Present ? .Watch_Later_Saved : .Watch_Later
 					if video.cover_index == card_action_cover {
-						if card_menu_waiting {glyph = .Spinner} else if card_action_done_until > u64(sdl.GetTicks()) {glyph = .Check}
+						if card_menu_waiting {glyph = .Spinner} else if card_action_done_until > sdl.GetTicks64() {glyph = .Check}
 					}
 					icon(glyph, 40)
 				}
@@ -355,7 +360,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 					},
 				},
 			},
-			) {label(title, .Small, focused ? COLOR_BACKGROUND : COLOR_TEXT, wrap = .Words)}
+			) {label(title, .Video_Title, focused ? COLOR_BACKGROUND : COLOR_TEXT, wrap = .Newlines)}
 			if clay.UI(clay.ID("card-channel", u32(index)))(
 			{
 				layout = {
@@ -376,7 +381,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 						4,
 					)
 				}
-				label(channel, .Caption, muted)
+				label(channel, .Card_Metadata, muted)
 			}
 			if shape.meta {
 				if clay.UI(clay.ID("card-meta", u32(index)))(
@@ -388,7 +393,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 						},
 					},
 				},
-				) {label(meta, .Caption, muted)}
+				) {label(meta, .Card_Metadata, muted)}
 			}
 		}
 	}

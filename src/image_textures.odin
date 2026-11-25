@@ -8,7 +8,7 @@ import "core:hash"
 import "core:strings"
 import sdl "vendor:sdl2"
 
-// Retain visible feed images, not entire pages. SDL owns reference counting.
+// Retain visible feed images, not entire pages.
 IMAGE_TEXTURE_BYTES :: 64 * 1024 * 1024
 Image_Key :: struct {
 	source: u64,
@@ -22,6 +22,26 @@ Image_Texture :: struct {
 image_textures: map[Image_Key]Image_Texture
 image_texture_bytes: i64
 image_texture_tick: u64
+// The first owner needs no entry. Track references shared by the catalog,
+// the cache and the playback avatar on the UI thread.
+shared_image_textures: map[^sdl.Texture]int
+
+share_image_texture :: proc(texture: ^sdl.Texture) {
+	if texture != nil {shared_image_textures[texture] += 1}
+}
+
+release_image_texture :: proc(texture: ^sdl.Texture) {
+	if texture == nil {return}
+	if remaining, found := &shared_image_textures[texture]; found {
+		remaining^ -= 1
+		if remaining^ == 0 {
+			delete_key(&shared_image_textures, texture)
+			if len(shared_image_textures) == 0 {delete(shared_image_textures); shared_image_textures = nil}
+		}
+		return
+	}
+	sdl.DestroyTexture(texture)
+}
 
 image_key :: proc(source: string, target: i32) -> Image_Key {
 	if source == "" {return {}}
@@ -41,7 +61,7 @@ retain_image_texture :: proc(key: Image_Key, texture: ^sdl.Texture) {
 			return
 		}
 		image_texture_bytes -= previous.bytes
-		sdl.DestroyTexture(previous.texture)
+		release_image_texture(previous.texture)
 		delete_key(&image_textures, key)
 	}
 	for image_texture_bytes + bytes > IMAGE_TEXTURE_BYTES {
@@ -52,10 +72,11 @@ retain_image_texture :: proc(key: Image_Key, texture: ^sdl.Texture) {
 		}
 		entry := image_textures[oldest]
 		image_texture_bytes -= entry.bytes
-		sdl.DestroyTexture(entry.texture)
+		release_image_texture(entry.texture)
 		delete_key(&image_textures, oldest)
 	}
 	image_texture_tick += 1
+	share_image_texture(texture)
 	image_textures[key] = {texture, bytes, image_texture_tick}
 	image_texture_bytes += bytes
 }
@@ -66,11 +87,12 @@ take_image_texture :: proc(key: Image_Key) -> ^sdl.Texture {
 	if !found {return nil}
 	image_texture_tick += 1
 	entry.used = image_texture_tick
+	share_image_texture(entry.texture)
 	return entry.texture
 }
 
 close_image_textures :: proc() {
-	for _, entry in image_textures {sdl.DestroyTexture(entry.texture)}
+	for _, entry in image_textures {release_image_texture(entry.texture)}
 	delete(image_textures)
 	image_textures = nil
 	image_texture_bytes, image_texture_tick = 0, 0
@@ -194,7 +216,7 @@ apply_image :: proc(renderer: ^sdl.Renderer, result: ^Network_Result) {
 	if result.surface == nil {return}
 	texture := upload_surface(renderer, result.surface)
 	if texture == nil {return}
-	if slot^ != nil {sdl.DestroyTexture(slot^)}
+	release_image_texture(slot^)
 	slot^ = texture
 	dirty = true
 }

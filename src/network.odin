@@ -159,7 +159,7 @@ resolve_selected :: proc(position_ms: f64 = 0, start_paused: bool = false) {
 	if selected < 0 || selected >= len(catalog.videos) {return}
 	clear_player_channel()
 	playback += 1
-	playback_requested_at = u64(sdl.GetTicks())
+	playback_requested_at = sdl.GetTicks64()
 	resolving = true
 	browsing = false
 	loaded = false
@@ -222,7 +222,10 @@ apply_stream :: proc(renderer: ^sdl.Renderer, result: ^Network_Result) {
 show_player_channel :: proc(channel_id: string, placeholder: ^sdl.Texture = nil) {
 	if channel_id == "" {return}
 	player_channel_id = strings.clone(channel_id)
-	if placeholder != nil {player_channel_avatar = placeholder}
+	if placeholder != nil {
+		share_image_texture(placeholder)
+		player_channel_avatar = placeholder
+	}
 	request := [1]Image_Request {
 		{
 			source = strings.clone(channel_id),

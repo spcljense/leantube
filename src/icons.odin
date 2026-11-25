@@ -25,32 +25,46 @@ Icon :: enum {
 	Spinner,
 	Hide,
 }
-ICON_FILES :: [Icon]string {
-	.Play              = "play",
-	.Pause             = "pause",
-	.Slower            = "minus",
-	.Faster            = "plus",
-	.Account           = "user-round",
-	.Search            = "search",
-	.Subscriptions     = "gallery-vertical-end",
-	.Watch_Later       = "clock",
-	.Watch_Later_Saved = "clock-check",
-	.History           = "rotate-ccw-clock",
-	.Check             = "check",
-	.Home              = "house",
-	.Playlists         = "list-video",
-	.Liked             = "thumbs-up",
-	.Spinner           = "loader-circle",
-	.Hide              = "eye-off",
+icon_assets := [Icon]struct {
+	file: string,
+	sizes: [4]u16,
+} {
+	.Play              = {"play", {32, 0, 0, 0}},
+	.Pause             = {"pause", {32, 0, 0, 0}},
+	.Slower            = {"minus", {28, 0, 0, 0}},
+	.Faster            = {"plus", {28, 0, 0, 0}},
+	.Account           = {"user-round", {32, 64, 0, 0}},
+	.Search            = {"search", {32, 0, 0, 0}},
+	.Subscriptions     = {"gallery-vertical-end", {32, 0, 0, 0}},
+	.Watch_Later       = {"clock", {32, 40, 0, 0}},
+	.Watch_Later_Saved = {"clock-check", {32, 40, 0, 0}},
+	.History           = {"rotate-ccw-clock", {32, 0, 0, 0}},
+	.Check             = {"check", {32, 40, 0, 0}},
+	.Home              = {"house", {32, 0, 0, 0}},
+	.Playlists         = {"list-video", {32, 0, 0, 0}},
+	.Liked             = {"thumbs-up", {32, 0, 0, 0}},
+	.Spinner           = {"loader-circle", {24, 32, 40, 48}},
+	.Hide              = {"eye-off", {32, 0, 0, 0}},
 }
-icons: [Icon]^sdl.Texture
-icon_pixels: c.int
+icons: [Icon][4]^sdl.Texture
 
-// SDL textures scale linearly by default. Opaque covers still need blending
-// for the rounded edge coverage.
+icon_pixels :: proc(size: u16) -> c.int {
+	return c.int(max(1, math.round(scaled(f32(size)))))
+}
+
+icon_texture :: proc(id: Icon, size: u16) -> ^sdl.Texture {
+	for variant, index in icon_assets[id].sizes {
+		if variant == size {return icons[id][index]}
+	}
+	return nil
+}
+
+// Opaque covers still need blending for the rounded edge coverage.
 upload_surface :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) -> ^sdl.Texture {
 	texture := sdl.CreateTextureFromSurface(renderer, surface)
-	if texture != nil && sdl.SetTextureBlendMode(texture, sdl.BlendMode.BLEND) != 0 {
+	if texture != nil &&
+	   (sdl.SetTextureBlendMode(texture, sdl.BlendMode.BLEND) != 0 ||
+		   sdl.SetTextureScaleMode(texture, .Linear) != 0) {
 		sdl.DestroyTexture(texture)
 		return nil
 	}
@@ -63,30 +77,42 @@ load_texture :: proc(renderer: ^sdl.Renderer, path: cstring) -> ^sdl.Texture {
 	return surface == nil ? nil : upload_surface(renderer, surface)
 }
 
+// Rasterize at twice the draw size, then prefilter into physical pixels.
+// A single linear GPU sample would discard most samples when minifying a large icon.
+load_icon :: proc(renderer: ^sdl.Renderer, file: string, size: u16) -> ^sdl.Texture {
+	path := fmt.caprintf("%s/icons/%s.svg", app_directory, file)
+	defer delete(path)
+	stream := sdl.RWFromFile(path, "rb")
+	if stream == nil {return nil}
+	defer _ = sdl.RWclose(stream)
+	pixels := icon_pixels(size)
+	surface := img.LoadSizedSVG_RW(stream, pixels * 2, pixels * 2)
+	if surface == nil {return nil}
+	defer sdl.FreeSurface(surface)
+	filtered := create_surface(pixels, pixels)
+	if filtered == nil {return nil}
+	defer sdl.FreeSurface(filtered)
+	if sdl.SoftStretchLinear(surface, nil, filtered, nil) != 0 {return nil}
+	return upload_surface(renderer, filtered)
+}
+
 open_icons :: proc(renderer: ^sdl.Renderer) -> bool {
-	pixels := c.int(math.ceil(scaled(48)))
-	if icon_pixels == pixels {return true}
 	close_icons()
-	for file, i in ICON_FILES {
-		path := fmt.caprintf("%s/icons/%s.svg", app_directory, file)
-		stream := sdl.RWFromFile(path, "rb")
-		delete(path)
-		if stream == nil {return false}
-		surface := img.LoadSizedSVG_RW(stream, pixels, pixels)
-		_ = sdl.RWclose(stream)
-		if surface == nil {return false}
-		icons[i] = sdl.CreateTextureFromSurface(renderer, surface)
-		sdl.FreeSurface(surface)
-		if icons[i] == nil {return false}
+	for asset, id in icon_assets {
+		for size, index in asset.sizes {
+			if size == 0 {continue}
+			icons[id][index] = load_icon(renderer, asset.file, size)
+			if icons[id][index] == nil {close_icons(); return false}
+		}
 	}
-	icon_pixels = pixels
 	return true
 }
 
 close_icons :: proc() {
-	for texture in icons {if texture != nil {sdl.DestroyTexture(texture)}}
+	for variants in icons {
+		for texture in variants {if texture != nil {sdl.DestroyTexture(texture)}}
+	}
 	icons = {}
-	icon_pixels = 0
 }
 
 // Float in the center without changing the parent's content layout.
@@ -103,16 +129,16 @@ centered_spinner :: proc() {
 }
 
 // Icons are white. A tint borrows a static color, so it outlives the layout.
-icon :: proc(id: Icon, size: f32 = 48, tint: ^clay.Color = nil) {
+icon :: proc(id: Icon, size: u16 = 48, tint: ^clay.Color = nil) {
 	if clay.UI()(
 	{
 		layout = {
 			sizing = {
-				width = clay.SizingFixed(scaled(size)),
-				height = clay.SizingFixed(scaled(size)),
+				width = clay.SizingFixed(f32(icon_pixels(size))),
+				height = clay.SizingFixed(f32(icon_pixels(size))),
 			},
 		},
-		image = {imageData = rawptr(icons[id])},
+		image = {imageData = rawptr(icon_texture(id, size))},
 		userData = tint,
 	},
 	) {}

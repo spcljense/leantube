@@ -123,12 +123,12 @@ search_text_x :: proc(font: ^ttf.Font, value: string, at: int) -> (f32, bool) {
 	if at <= 0 {return 0, true}
 	if at >= len(value) {
 		width: c.int
-		if ttf.SizeUTF8(font, cstring(raw_data(value)), &width, nil) != 0 {return 0, false}
+		if !measure_utf8(font, value, &width, nil) {return 0, false}
 		return f32(width), true
 	}
 	width: c.int
 	prefix := value[:at]
-	if ttf.SizeUTF8(font, cstring(raw_data(prefix)), &width, nil) != 0 {return 0, false}
+	if !measure_utf8(font, prefix, &width, nil) {return 0, false}
 	return f32(width), true
 }
 
@@ -138,13 +138,13 @@ search_pointer :: proc(x: f32, extend: bool = false) {
 	if value != "" {
 		box := clay.GetElementData(clay.ID("search-text")).boundingBox
 		point := x - math.round(box.x - search_scroll)
-		first, ok := search_text_x(fonts[.Heading], value, 0)
+		first, ok := search_text_x(fonts[.Search_Input], value, 0)
 		if !ok {return}
 		nearest := math.abs(point - first)
 		it := utf8.decode_grapheme_iterator_make(value)
 		for part, grapheme in utf8.decode_grapheme_iterate(&it) {
 			boundary := grapheme.byte_index + len(part)
-			position, found := search_text_x(fonts[.Heading], value, boundary)
+			position, found := search_text_x(fonts[.Search_Input], value, boundary)
 			if !found {return}
 			if distance := math.abs(point - position); distance < nearest {
 				at, nearest = boundary, distance
@@ -165,8 +165,9 @@ render_search_text :: proc(
 ) -> bool {
 	// The fixed icon stays outside the scrolling text's clip.
 	box := clay.GetElementData(clay.ID("search-icon")).boundingBox
-	destination := sdl.FRect{box.x, box.y, box.width, box.height}
-	texture := icons[.Search]
+	pixels := f32(icon_pixels(32))
+	destination := sdl.FRect{math.round(box.x), math.round(box.y), pixels, pixels}
+	texture := icon_texture(.Search, 32)
 	if sdl.SetTextureColorMod(
 		texture,
 		u8(COLOR_MUTED[0]),
@@ -176,10 +177,10 @@ render_search_text :: proc(
 	defer _ = sdl.SetTextureColorMod(texture, 255, 255, 255)
 	if sdl.RenderCopyF(renderer, texture, nil, &destination) != 0 {return false}
 	value := strings.to_string(search_text)
-	text := frame_text(renderer, index, fonts[.Heading], value == "" ? "Search YouTube" : value)
+	text := frame_text(renderer, index, fonts[.Search_Input], value == "" ? "Search YouTube" : value)
 	if text == nil {return false}
-	caret, caret_ok := search_text_x(fonts[.Heading], value, search_editor.selection[0])
-	anchor, anchor_ok := search_text_x(fonts[.Heading], value, search_editor.selection[1])
+	caret, caret_ok := search_text_x(fonts[.Search_Input], value, search_editor.selection[0])
+	anchor, anchor_ok := search_text_x(fonts[.Search_Input], value, search_editor.selection[1])
 	width, height := text.width, text.height
 	if !caret_ok || !anchor_ok {return false}
 	if value == "" {caret, anchor = 0, 0}
@@ -208,9 +209,9 @@ render_search_text :: proc(
 	if sdl.RenderCopyF(renderer, text.texture, nil, &text_destination) != 0 {return false}
 	caret_rect := sdl.FRect {
 		max(rect.x, math.round(x + caret - SEARCH_CARET_WIDTH / 2)),
-		rect.y + (rect.h - f32(text_sizes[.Heading])) / 2,
+		rect.y + (rect.h - f32(text_sizes[.Search_Input])) / 2,
 		SEARCH_CARET_WIDTH,
-		f32(text_sizes[.Heading]),
+		f32(text_sizes[.Search_Input]),
 	}
 	return set_color(renderer, COLOR_TEXT) && sdl.RenderFillRectF(renderer, &caret_rect) == 0
 }
@@ -260,7 +261,7 @@ search_layout :: proc() {
 				layout = {
 					sizing = {
 						width = clay.SizingGrow({}),
-						height = clay.SizingFixed(f32(ttf.FontHeight(fonts[.Heading]))),
+						height = clay.SizingFixed(f32(ttf.FontHeight(fonts[.Search_Input]))),
 					},
 				},
 				custom = {customData = &search_editor},

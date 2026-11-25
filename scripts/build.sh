@@ -57,7 +57,7 @@ read -r -a cflags <<< "$("$pkg" --cflags luna-service2 glib-2.0 wayland-client)"
 read -r -a libs <<< "$("$pkg" --libs luna-service2 glib-2.0 wayland-client)"
 # Keep the C dependencies optimized in both modes. Ccache tracks their inputs.
 objects=()
-for source in src/native/bridge.c src/native/clay.c src/native/webos-shell-protocol.c \
+for source in src/native/bridge.c src/native/clay.c src/native/webos-shell-protocol.c src/native/image_files.c \
 	src/native/foreign.c build/obj/text-protocol.c build/obj/webos-foreign-protocol.c \
 	vendor/qrcodegen/qrcodegen.c; do
 	name=${source##*/}

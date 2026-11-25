@@ -1,0 +1,239 @@
+diff --git a/src/video/wayland/SDL_waylandevents.c b/src/video/wayland/SDL_waylandevents.c
+--- a/src/video/wayland/SDL_waylandevents.c
++++ b/src/video/wayland/SDL_waylandevents.c
+@@ -469,6 +469,7 @@
+     window = (SDL_WindowData *)wl_surface_get_user_data(surface);
+ 
+     if (window) {
++        input->display->pointer = pointer;
+         input->pointer_focus = window;
+         input->pointer_enter_serial = serial;
+         SDL_SetMouseFocus(window->sdlwindow);
+@@ -496,7 +497,7 @@
+         /* A pointer leave event may be emitted if the compositor hides the pointer in response to receiving a touch event.
+          * Don't relinquish focus if the surface has active touches, as the compositor is just transitioning from mouse to touch mode.
+          */
+-        if (!Wayland_SurfaceHasActiveTouches(surface)) {
++        if (input->display->pointer == pointer && !Wayland_SurfaceHasActiveTouches(surface)) {
+             SDL_SetMouseFocus(NULL);
+         }
+         input->pointer_focus = NULL;
+@@ -1245,18 +1246,26 @@
+ 
+     wind = wl_surface_get_user_data(surface);
+     if (wind) {
+-        wind->keyboard_device = NULL;
+         window = wind->sdlwindow;
+         window->flags &= ~SDL_WINDOW_MOUSE_CAPTURE;
+     }
+ 
+     /* Stop key repeat before clearing keyboard focus */
+     keyboard_repeat_clear(&input->keyboard_repeat);
+-
+-    /* This will release any keys still pressed */
+-    SDL_SetKeyboardFocus(NULL);
+     input->keyboard_focus = NULL;
+ 
++    /* A remote keyboard and another seat can focus the same surface. */
++    if (wind && wind->keyboard_device == input) {
++        struct SDL_WaylandInput *other = input->display->input;
++        while (other && other->keyboard_focus != wind) {
++            other = other->next;
++        }
++        wind->keyboard_device = other;
++        if (!other && SDL_GetKeyboardFocus() == window) {
++            SDL_SetKeyboardFocus(NULL);
++        }
++    }
++
+ #ifdef SDL_USE_IME
+     if (!input->text_input) {
+         SDL_IME_SetFocus(SDL_FALSE);
+@@ -1266,7 +1275,9 @@
+     /* If the surface had a pointer leave event while still having active touch events, it retained mouse focus.
+      * Clear it now if all touch events are raised.
+      */
+-    if (!input->pointer_focus && SDL_GetMouseFocus() == window && !Wayland_SurfaceHasActiveTouches(surface)) {
++    if ((!input->display->pointer ||
++         !((struct SDL_WaylandInput *)wl_pointer_get_user_data(input->display->pointer))->pointer_focus) &&
++        SDL_GetMouseFocus() == window && !Wayland_SurfaceHasActiveTouches(surface)) {
+         SDL_SetMouseFocus(NULL);
+     }
+ }
+@@ -1322,6 +1333,27 @@
+     return WAYLAND_xkb_keysym_to_utf8(sym, text, 8) > 0;
+ }
+ 
++static SDL_Scancode Wayland_webos_navigation_scancode(struct SDL_WaylandInput *input, uint32_t key)
++{
++    const xkb_keysym_t *syms;
++    if (input->xkb.state && WAYLAND_xkb_state_key_get_syms(input->xkb.state, key + 8, &syms) == 1) {
++        switch (syms[0]) {
++        case XKB_KEY_Up: return SDL_SCANCODE_UP;
++        case XKB_KEY_Down: return SDL_SCANCODE_DOWN;
++        case XKB_KEY_Left: return SDL_SCANCODE_LEFT;
++        case XKB_KEY_Right: return SDL_SCANCODE_RIGHT;
++        case XKB_KEY_Return:
++        case XKB_KEY_Select: return SDL_SCANCODE_RETURN;
++        case XKB_KEY_KP_Enter: return SDL_SCANCODE_KP_ENTER;
++        }
++    }
++    /* Linux KEY_OK and KEY_SELECT are outside the stock PC scancode table. */
++    if (key == 0x160 || key == 0x161) {
++        return SDL_SCANCODE_RETURN;
++    }
++    return SDL_SCANCODE_UNKNOWN;
++}
++
+ static void keyboard_handle_key(void *data, struct wl_keyboard *keyboard,
+                                 uint32_t serial, uint32_t time, uint32_t key,
+                                 uint32_t state_w)
+@@ -1348,7 +1380,12 @@
+         keyboard_input_get_text(text, input, key, SDL_RELEASED, &handled_by_ime);
+     }
+ 
+-    scancode = Wayland_get_scancode_from_key(input, key + 8);
++    if (SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++        scancode = Wayland_webos_navigation_scancode(input, key);
++    }
++    if (scancode == SDL_SCANCODE_UNKNOWN) {
++        scancode = Wayland_get_scancode_from_key(input, key + 8);
++    }
+     SDL_SendKeyboardKey(state == WL_KEYBOARD_KEY_STATE_PRESSED ? SDL_PRESSED : SDL_RELEASED, scancode);
+ 
+     Wayland_data_device_set_serial(input->data_device, serial);
+@@ -1447,7 +1484,9 @@
+     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !input->pointer) {
+         input->pointer = wl_seat_get_pointer(seat);
+         SDL_memset(&input->pointer_curr_axis_info, 0, sizeof(input->pointer_curr_axis_info));
+-        input->display->pointer = input->pointer;
++        if (!input->display->pointer) {
++            input->display->pointer = input->pointer;
++        }
+         Wayland_CreateCursorShapeDevice(input);
+         wl_pointer_set_user_data(input->pointer, input);
+         wl_pointer_add_listener(input->pointer, &pointer_listener,
+@@ -1457,9 +1496,15 @@
+             wp_cursor_shape_device_v1_destroy(input->cursor_shape);
+             input->cursor_shape = NULL;
+         }
++        if (input->display->pointer == input->pointer) {
++            input->display->pointer = NULL;
++            if (input->pointer_focus) {
++                SDL_SetMouseFocus(NULL);
++            }
++        }
+         wl_pointer_destroy(input->pointer);
+         input->pointer = NULL;
+-        input->display->pointer = NULL;
++        input->pointer_focus = NULL;
+     }
+ 
+     if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !input->touch) {
+@@ -2544,16 +2589,33 @@
+ {
+     struct SDL_WaylandInput *input = d->input;
+ 
++    /* Follow SDL-webOS by retaining a distinct input object for each seat. */
++    if (input->seat && SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++        struct SDL_WaylandInput *tail = input;
++        while (tail->next) {
++            tail = tail->next;
++        }
++        input = SDL_calloc(1, sizeof(*input));
++        if (!input) {
++            return;
++        }
++        input->display = d;
++        input->xkb.current_group = XKB_GROUP_INVALID;
++        tail->next = input;
++    }
++
+     input->seat = wl_registry_bind(d->registry, id, &wl_seat_interface, SDL_min(SDL_WL_SEAT_VERSION, version));
+ 
+-    if (d->data_device_manager) {
+-        Wayland_create_data_device(d);
+-    }
+-    if (d->primary_selection_device_manager) {
+-        Wayland_create_primary_selection_device(d);
+-    }
+-    if (d->text_input_manager) {
+-        Wayland_create_text_input(d);
++    if (input == d->input) {
++        if (d->data_device_manager) {
++            Wayland_create_data_device(d);
++        }
++        if (d->primary_selection_device_manager) {
++            Wayland_create_primary_selection_device(d);
++        }
++        if (d->text_input_manager) {
++            Wayland_create_text_input(d);
++        }
+     }
+ 
+     wl_seat_add_listener(input->seat, &seat_listener, input);
+@@ -2644,8 +2706,13 @@
+         WAYLAND_xkb_keymap_unref(input->xkb.keymap);
+     }
+ 
++    d->input = input->next;
+     SDL_free(input);
+-    d->input = NULL;
++    if (d->input) {
++        Wayland_display_destroy_input(d);
++    } else {
++        d->pointer = NULL;
++    }
+ }
+ 
+ /* !!! FIXME: just merge these into display_handle_global(). */
+diff --git a/src/video/wayland/SDL_waylandevents_c.h b/src/video/wayland/SDL_waylandevents_c.h
+--- a/src/video/wayland/SDL_waylandevents_c.h
++++ b/src/video/wayland/SDL_waylandevents_c.h
+@@ -85,6 +85,7 @@
+ struct SDL_WaylandInput
+ {
+     SDL_VideoData *display;
++    struct SDL_WaylandInput *next;
+     struct wl_seat *seat;
+     struct wl_pointer *pointer;
+     struct wl_touch *touch;
+diff --git a/src/video/wayland/SDL_waylandmouse.c b/src/video/wayland/SDL_waylandmouse.c
+--- a/src/video/wayland/SDL_waylandmouse.c
++++ b/src/video/wayland/SDL_waylandmouse.c
+@@ -453,13 +453,14 @@
+ {
+     SDL_VideoDevice *vd = SDL_GetVideoDevice();
+     SDL_VideoData *d = vd->driverdata;
+-    struct SDL_WaylandInput *input = d->input;
++    struct SDL_WaylandInput *input;
+     struct wl_pointer *pointer = d->pointer;
+     float scale = 1.0f;
+ 
+     if (!pointer) {
+         return -1;
+     }
++    input = wl_pointer_get_user_data(pointer);
+ 
+     if (cursor) {
+         Wayland_CursorData *data = cursor->driverdata;
+diff --git a/src/video/wayland/SDL_waylandwindow.c b/src/video/wayland/SDL_waylandwindow.c
+--- a/src/video/wayland/SDL_waylandwindow.c
++++ b/src/video/wayland/SDL_waylandwindow.c
+@@ -2311,6 +2311,16 @@
+     SDL_WindowData *wind = window->driverdata;
+ 
+     if (data) {
++        struct SDL_WaylandInput *input;
++        for (input = data->input; input; input = input->next) {
++            if (input->pointer_focus == wind) {
++                input->pointer_focus = NULL;
++            }
++            if (input->keyboard_focus == wind) {
++                input->keyboard_focus = NULL;
++            }
++        }
++
+ #ifdef SDL_VIDEO_OPENGL_EGL
+         if (wind->egl_surface) {
+             SDL_EGL_DestroySurface(_this, wind->egl_surface);

@@ -9,6 +9,7 @@ import "core:strings"
 import "core:sync"
 import "core:thread"
 import sdl "vendor:sdl2"
+import img "vendor:sdl2/image"
 
 // Image downloads run beside the main network worker, so a slow API request
 // or one slow image does not hold back the covers on screen. On the B9, four
@@ -39,9 +40,12 @@ start_image_loader :: proc() -> bool {
 		directory     = image_loader.directory,
 		maximum_bytes = IMAGE_CACHE_BYTES,
 	}
-	if os.make_directory_all(image_loader.directory) != nil || !trim_image_cache(image_loader.cache) {
+	create_error := os.make_directory_all(image_loader.directory)
+	if (create_error != nil && create_error != .Exist) || !trim_image_cache(image_loader.cache) {
 		fmt.eprintln("image cache is unavailable")
 	}
+	// Initialize the codecs before concurrent worker calls to IMG_Load.
+	_ = img.Init({.PNG, .JPG, .WEBP})
 	for &worker in image_loader.threads {
 		worker = thread.create(image_worker)
 		if worker == nil {return false}

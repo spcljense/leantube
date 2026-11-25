@@ -16,6 +16,8 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	width, height: c.int
 	assert(sdl.QueryTexture(texture, nil, nil, &width, &height) == 0)
 	assert(width == 101 && height == 57, "WebP decoding must retain the source dimensions")
+	filter: sdl.ScaleMode
+	assert(sdl.GetTextureScaleMode(texture, &filter) == 0 && filter == .Linear)
 	assert(set_color(renderer, {0, 0, 0, 255}) && sdl.RenderClear(renderer) == 0)
 	for i in 0 ..< 2 {
 		x := f32(16 + i * 96)
@@ -42,7 +44,8 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		assert(partial > 8, "rounded fills and opaque images must have antialiased edges")
 	}
 	save_snapshot(surface, "rounded-edges")
-	// The gray track must not darken a completed bar at its rounded edge.
+	// SDL2's software alpha blending can round each channel down by two.
+	// The gray track must not darken a completed bar beyond that rounding.
 	assert(set_color(renderer, COLOR_ACCENT) && sdl.RenderClear(renderer) == 0)
 	assert(
 		rounded_progress(
@@ -59,9 +62,9 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 			red, green, blue: u8
 			assert(read_surface_pixel(surface, i32(x), i32(y), &red, &green, &blue, nil))
 			assert(
-				math.abs(i32(red) - i32(COLOR_ACCENT[0])) <= 1 &&
-				math.abs(i32(green) - i32(COLOR_ACCENT[1])) <= 1 &&
-				math.abs(i32(blue) - i32(COLOR_ACCENT[2])) <= 1,
+				math.abs(i32(red) - i32(COLOR_ACCENT[0])) <= 2 &&
+				math.abs(i32(green) - i32(COLOR_ACCENT[1])) <= 2 &&
+				math.abs(i32(blue) - i32(COLOR_ACCENT[2])) <= 2,
 				"a completed bar must not leave a dark track at the rounded edge",
 			)
 		}
@@ -80,6 +83,20 @@ check_rounded_edges :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	red: u8
 	assert(read_surface_pixel(surface, 48, 80, &red, nil, nil, nil))
 	assert(red > 0, "fractional cover bounds must not cut off the bottom progress edge")
+}
+
+check_icon_resolution :: proc() {
+	for asset, id in icon_assets {
+		for size in asset.sizes {
+			if size == 0 {continue}
+			texture := icon_texture(id, size)
+			width, height: c.int
+			assert(sdl.QueryTexture(texture, nil, nil, &width, &height) == 0)
+			assert(width == icon_pixels(size) && height == width)
+			filter: sdl.ScaleMode
+			assert(sdl.GetTextureScaleMode(texture, &filter) == 0 && filter == .Linear)
+		}
+	}
 }
 
 // A 4:3 JPEG with baked-in bars must fill a 16:9 frame in both render paths.
@@ -126,32 +143,79 @@ check_cover_fill :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 
 // Use real font measurements, including UTF-8 and an explicit final line.
 check_text_fitting :: proc() {
+	assert(string(ttf.FontFaceFamilyName(fonts[.Body])) == "Roboto")
+	assert(string(ttf.FontFaceFamilyName(fonts[.Video_Title])) == "Noto Sans")
+	title_font := fonts[.Video_Title]
+	for sample in ([]string{
+		"cafe\u0301",
+		"A𝒜𝟙Z · ✓ 🎬 🚀",
+		"日本語 简体中文 繁體中文 한국어",
+		"العَرَبِيَّة עִבְרִית",
+		"हिन्दी বাংলা ภาษาไทย",
+		"Left\u200b\u2060right",
+	}) {
+		runs := fallback_text_runs(title_font, sample)
+		defer delete(runs)
+		if len(runs) == 0 {
+			assert(font_supports_text(title_font, sample), sample)
+		}
+		for run in runs {
+			assert(font_supports_text(run.font, sample[run.first:run.end]), sample)
+		}
+		width, height: c.int
+		assert(measure_utf8(title_font, sample, &width, &height), sample)
+		surface := render_text_surface(title_font, sample)
+		assert(surface != nil && surface.w == width && surface.h == height, sample)
+		sdl.FreeSurface(surface)
+	}
+	rtl := "العربية لغة جميلة"
+	rtl_runs := fallback_text_runs(title_font, rtl)
+	defer delete(rtl_runs)
+	assert(len(rtl_runs) == 1 && rtl_runs[0].end == len(rtl))
+	cluster := "e\u0301"
+	cluster_width: c.int
+	assert(measure_utf8(title_font, cluster, &cluster_width, nil))
+	assert(text_fit_offset(title_font, "e\u0301e\u0301", cluster_width) == len(cluster))
 	for sample in ([]string{"short", "café café café café café café", "a long channel name that must end with an ellipsis"}) {
 		fit, owned := fit_text(fonts[.Small], sample, 160)
 		defer if owned {delete(fit)}
 		width: i32
-		assert(ttf.SizeUTF8(fonts[.Small], cstring(raw_data(fit)), &width, nil) == 0)
+		assert(measure_utf8(fonts[.Small], fit, &width, nil))
 		assert(width <= 160)
 		if owned {assert(strings.has_suffix(fit, "…"))} else {assert(fit == sample)}
 	}
 	// A dot leader is not an ASCII period. It must use the actual fallback glyph.
 	dot_font: ^ttf.Font
 	for fallback in fallback_fonts[.Caption] {
-		if fallback != nil && ttf.GlyphIsProvided32(fallback, 0x2024) != 0 {dot_font = fallback; break}
+		if fallback != nil &&
+		   ttf.GlyphIsProvided32(fallback, 0x2024) != 0 {dot_font = fallback; break}
 	}
 	if dot_font != nil && ttf.GlyphIsProvided32(fonts[.Caption], 0x2024) == 0 {
 		dot: string : "․"
 		actual, expected: i32
-		assert(ttf.SizeUTF8(fonts[.Caption], cstring(raw_data(dot)), &actual, nil) == 0)
-		assert(ttf.SizeUTF8(dot_font, cstring(raw_data(dot)), &expected, nil) == 0)
+		assert(measure_utf8(fonts[.Caption], dot, &actual, nil))
+		assert(measure_utf8(dot_font, dot, &expected, nil))
 		assert(actual > 0 && actual == expected, "text measurement must use the fallback glyph")
+	}
+	// A label can use both Roboto and the bundled math fallback on the same line.
+	mixed := "A𝒜Z"
+	font := fonts[.Small]
+	if ttf.GlyphIsProvided32(font, '𝒜') == 0 {
+		runs := fallback_text_runs(font, mixed)
+		defer delete(runs)
+		assert(len(runs) == 3 && runs[1].font != font && mixed[runs[1].first:runs[1].end] == "𝒜")
+		width, height: c.int
+		assert(measure_utf8(font, mixed, &width, &height))
+		surface := render_text_surface(font, mixed)
+		assert(surface != nil && surface.w == width && surface.h == height)
+		sdl.FreeSurface(surface)
 	}
 	continued, owned := fit_text(fonts[.Small], "short", 160, true)
 	defer if owned {delete(continued)}
 	assert(strings.has_suffix(continued, "…"))
 	too_narrow, _ := fit_text(fonts[.Small], "text", 1)
 	assert(too_narrow == "")
-	// Times and counts reuse Geist, so every digit must share one advance.
+	// Keep times and counts stable as their digits change.
 	advance: c.int
 	for digit in '0' ..= '9' {
 		width: c.int
@@ -161,18 +225,20 @@ check_text_fitting :: proc() {
 	}
 	// A wrapped title is fitted to two lines and keeps the trailing ellipsis.
 	wrapped, wrapped_owned, wrapped_lines := fit_wrapped(
-		fonts[.Small],
+		fonts[.Video_Title],
 		"a very long video title that keeps going well past two lines of text for the card",
 		400,
 		2,
 	)
 	defer if wrapped_owned {delete(wrapped)}
 	assert(wrapped_lines == 2 && strings.has_suffix(wrapped, "…"))
-	line_height := ttf.FontHeight(fonts[.Small])
-	wrapped_width, wrapped_height: c.int
-	assert(ttf.SizeUTF8(fonts[.Small], cstring(raw_data(wrapped)), &wrapped_width, &wrapped_height) == 0)
-	assert(wrapped_width <= 400)
-	assert(wrapped_height <= 2 * line_height, "a fitted title must wrap to two lines at most")
-	fits, fits_owned, fits_lines := fit_wrapped(fonts[.Small], "short title", 400, 2)
+	break_at := strings.index_byte(wrapped, '\n')
+	assert(break_at > 0 && break_at + 1 < len(wrapped))
+	lines := [2]string{wrapped[:break_at], wrapped[break_at + 1:]}
+	for line in lines {
+		width: c.int
+		assert(measure_utf8(fonts[.Video_Title], line, &width, nil) && width <= 400)
+	}
+	fits, fits_owned, fits_lines := fit_wrapped(fonts[.Video_Title], "short title", 400, 2)
 	assert(!fits_owned && fits_lines == 1 && fits == "short title")
 }

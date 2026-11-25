@@ -51,7 +51,7 @@ track_state :: proc(track: ^reader.Track, ranges: [][2]f64) -> Track_State {
 }
 
 write_control_state :: proc(stopped: bool = false) {
-	now := u64(sdl.GetTicks())
+	now := sdl.GetTicks64()
 	if !stopped && now - control_saved_at < 200 && control_saved_at >= control_started_at {return}
 	control_saved_at = now
 	state := struct {

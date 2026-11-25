@@ -1,11 +1,14 @@
 {
-	"private": true,
-	"devDependencies": {
-		"@types/bun": "latest",
-		"@webos-tools/cli": "3.2.6"
-	},
-	"packageManager": "bun@1.4.4",
-	"patchedDependencies": {
-		"@webos-tools/cli@3.2.6": "patches/@webos-tools%2Fcli@3.2.6.patch"
-	}
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@webos-tools/cli": "3.2.6"
+  },
+  "packageManager": "bun@1.4.4",
+  "patchedDependencies": {
+    "@webos-tools/cli@3.2.6": "patches/@webos-tools%2Fcli@3.2.6.patch"
+  },
+  "trustedDependencies": [
+    "@webos-tools/cli"
+  ]
 }

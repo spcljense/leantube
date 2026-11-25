@@ -163,7 +163,7 @@ prepare_player :: proc(end: f64) {
 	}
 	player_clock, player_applied_rate, rate = 0, 1, 1
 	player_buffering, player_bound, player_eos = false, false, false
-	player_progress_at = u64(sdl.GetTicks())
+	player_progress_at = sdl.GetTicks64()
 	paused, loaded, browsing, return_to_grid, running = false, false, false, false, true
 	timeline = {
 		seek_target_ms = -1,

@@ -18,7 +18,7 @@ check_channel_ui :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	channel_avatar = load_texture(renderer, "tests/ui/cover.webp")
 	defer {
 		model.channel_destroy(&catalog.channel)
-		sdl.DestroyTexture(channel_avatar)
+		release_image_texture(channel_avatar)
 		catalog.channel, channel_avatar = saved_channel, saved_avatar
 		selected, rail_focus, channel_focus, channel_cursor =
 			saved_selected, saved_rail, saved_focus, saved_cursor

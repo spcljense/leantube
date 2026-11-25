@@ -6,12 +6,12 @@ import sb "./sponsorblock"
 import sdl "vendor:sdl2"
 
 Control_Button :: struct {
-	id:   string,
-	icon: Icon,
-	key:  sdl.Keycode,
+	id:         string,
+	icon:       Icon,
+	rate_delta: f64,
 }
-SLOWER_BUTTON :: Control_Button{"slower", .Slower, sdl.Keycode.DOWN}
-FASTER_BUTTON :: Control_Button{"faster", .Faster, sdl.Keycode.UP}
+SLOWER_BUTTON :: Control_Button{"slower", .Slower, -0.25}
+FASTER_BUTTON :: Control_Button{"faster", .Faster, 0.25}
 control_buttons := [?]Control_Button{SLOWER_BUTTON, FASTER_BUTTON}
 
 // The rate stepper is one light pill. It is muted like the other labels,
@@ -40,7 +40,10 @@ control_button :: proc(button: Control_Button) {
 }
 
 controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: bool) {
-	point: clay.Vector2
+	point := clay.Vector2{x, y}
+	if renderer != nil && sdl.RenderGetWindow(renderer) != nil {
+		sdl.RenderWindowToLogical(renderer, i32(x), i32(y), &point[0], &point[1])
+	}
 	clay.SetPointerState(point, down)
 	dirty = true
 	if login_screen {
@@ -129,7 +132,7 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 				channel_focus = false
 				if activate {
 					if search_editing {finish_search_input(sdl.RenderGetWindow(renderer))}
-					begin_card_press(true, u64(sdl.GetTicks()))
+					begin_card_press(true, sdl.GetTicks64())
 				}
 				break
 			}
@@ -147,7 +150,11 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 			}
 		}
 		for button in control_buttons {
-			if clay.PointerOver(clay.ID(button.id)) {key(button.key); break}
+			if clay.PointerOver(clay.ID(button.id)) {
+				next := clamp(rate + button.rate_delta, 0.5, 2)
+				if next != rate && player_rate(next) {rate = next}
+				break
+			}
 		}
 	}
 }
@@ -403,13 +410,13 @@ player_layout :: proc(elapsed, total, speed, quality: string) {
 PLAYER_CONTROLS_MS :: 3000
 controls_until: u64
 
-show_player_controls :: proc() {controls_until = u64(sdl.GetTicks()) + PLAYER_CONTROLS_MS}
+show_player_controls :: proc() {controls_until = sdl.GetTicks64() + PLAYER_CONTROLS_MS}
 
 player_controls_visible :: proc() -> bool {
 	return(
 		paused ||
 		!loaded ||
-		u64(sdl.GetTicks()) < controls_until ||
+		sdl.GetTicks64() < controls_until ||
 		clay.PointerOver(clay.ID("controls")) ||
 		clay.PointerOver(clay.ID("player-header")) \
 	)

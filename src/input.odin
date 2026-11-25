@@ -2,21 +2,19 @@ package main
 
 import sdl "vendor:sdl2"
 
-MEDIA_PLAY_KEY  :: sdl.Keycode(0x100001)
-MEDIA_PAUSE_KEY :: sdl.Keycode(0x100002)
-
-input_key :: proc(raw: u16, logical: sdl.Keycode) -> sdl.Keycode {
-	// LG's /usr/share/X11/xkb/keycodes/lg declares IR_KEY_BACK=420.
-	// Wayland sends the keycode without XKB's offset of 8. SDL2 assigns a
-	// custom scancode instead of a standard Back key on the B9.
-	switch raw {
-	case 420 - 8:
-		return sdl.Keycode.AC_BACK
-	// The remote sends play and pause as separate keys, with no state.
-	case 215 - 8:
-		return MEDIA_PLAY_KEY
-	case 127 - 8:
-		return MEDIA_PAUSE_KEY
+input_key :: proc(keysym: sdl.Keysym) -> sdl.Keycode {
+	// Keep navigation usable even if the compositor's layout leaves these
+	// physical keys without an SDL key symbol.
+	#partial switch keysym.scancode {
+	case .AC_BACK:   return .AC_BACK
+	case .AUDIOPLAY: return .AUDIOPLAY
+	case .PAUSE:     return .PAUSE
+	case .UP:       return .UP
+	case .DOWN:     return .DOWN
+	case .LEFT:     return .LEFT
+	case .RIGHT:    return .RIGHT
+	case .RETURN:   return .RETURN
+	case .KP_ENTER: return .KP_ENTER
 	}
-	return logical
+	return keysym.sym
 }

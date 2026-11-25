@@ -1,0 +1,150 @@
+diff --git a/src/video/wayland/SDL_waylandwindow.c b/src/video/wayland/SDL_waylandwindow.c
+--- a/src/video/wayland/SDL_waylandwindow.c
++++ b/src/video/wayland/SDL_waylandwindow.c
+@@ -156,6 +156,13 @@
+     }
+ }
+ 
++static void SetBufferScale(struct wl_surface *surface, int32_t scale)
++{
++    if (wl_surface_get_version(surface) >= WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION) {
++        wl_surface_set_buffer_scale(surface, scale);
++    }
++}
++
+ static void ConfigureWindowGeometry(SDL_Window *window)
+ {
+     SDL_WindowData *data = window->driverdata;
+@@ -190,7 +197,7 @@
+             GetFullScreenDimensions(window, &fs_width, &fs_height, NULL, NULL);
+ 
+             /* Set the buffer scale to 1 since a viewport will be used. */
+-            wl_surface_set_buffer_scale(data->surface, 1);
++            SetBufferScale(data->surface, 1);
+             wp_viewport_set_destination(data->draw_viewport, output_width, output_height);
+ 
+             data->window_width = output_width;
+@@ -204,14 +211,14 @@
+ 
+         if (window_size_changed || drawable_size_changed) {
+             if (data->draw_viewport) {
+-                wl_surface_set_buffer_scale(data->surface, 1);
++                SetBufferScale(data->surface, 1);
+                 wp_viewport_set_destination(data->draw_viewport, window->w, window->h);
+             } else {
+                 if (!FullscreenModeEmulation(window)) {
+                     /* Round to the next integer in case of a fractional value. */
+-                    wl_surface_set_buffer_scale(data->surface, (int32_t)SDL_ceilf(data->scale_factor));
++                    SetBufferScale(data->surface, (int32_t)SDL_ceilf(data->scale_factor));
+                 } else {
+-                    wl_surface_set_buffer_scale(data->surface, 1);
++                    SetBufferScale(data->surface, 1);
+                 }
+             }
+ 
+@@ -1272,6 +1279,11 @@
+     SDL_VideoData *c = _this->driverdata;
+     SDL_WindowData *data = window->driverdata;
+ 
++    /* LeanTube attaches the LG shell role before submitting its first buffer. */
++    if (SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++        return;
++    }
++
+     /* Detach any previous buffers before resetting everything, otherwise when
+      * calling this a second time you'll get an annoying protocol error!
+      *
+@@ -2082,6 +2094,12 @@
+                                             &fractional_scale_listener, data);
+     }
+ 
++    /* No SDL shell role is needed when the application supplies its own. */
++    if (SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++        WAYLAND_wl_display_flush(c->display);
++        return 0;
++    }
++
+     /* Moved this call to ShowWindow: wl_surface_commit(data->surface); */
+     WAYLAND_wl_display_flush(c->display);
+ 
+diff --git a/src/video/wayland/SDL_waylandvideo.c b/src/video/wayland/SDL_waylandvideo.c
+--- a/src/video/wayland/SDL_waylandvideo.c
++++ b/src/video/wayland/SDL_waylandvideo.c
+@@ -691,12 +691,12 @@
+     display_handle_scale
+ };
+ 
+-static void Wayland_add_display(SDL_VideoData *d, uint32_t id)
++static void Wayland_add_display(SDL_VideoData *d, uint32_t id, uint32_t version)
+ {
+     struct wl_output *output;
+     SDL_WaylandOutputData *data;
+ 
+-    output = wl_registry_bind(d->registry, id, &wl_output_interface, 2);
++    output = wl_registry_bind(d->registry, id, &wl_output_interface, SDL_min(version, 2));
+     if (!output) {
+         SDL_SetError("Failed to retrieve output.");
+         return;
+@@ -841,9 +841,10 @@
+     if (SDL_strcmp(interface, "wl_compositor") == 0) {
+         d->compositor = wl_registry_bind(d->registry, id, &wl_compositor_interface, SDL_min(4, version));
+     } else if (SDL_strcmp(interface, "wl_output") == 0) {
+-        Wayland_add_display(d, id);
++        Wayland_add_display(d, id, version);
+     } else if (SDL_strcmp(interface, "wl_seat") == 0) {
+-        Wayland_display_add_input(d, id, version);
++        /* Older LG compositors advertise a newer seat than their legacy clients use. */
++        Wayland_display_add_input(d, id, SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE) ? 1 : version);
+     } else if (SDL_strcmp(interface, "xdg_wm_base") == 0) {
+         d->shell.xdg = wl_registry_bind(d->registry, id, &xdg_wm_base_interface, SDL_min(version, 5));
+         xdg_wm_base_add_listener(d->shell.xdg, &shell_listener_xdg, NULL);
+@@ -977,6 +978,17 @@
+     // Second roundtrip to receive all output events.
+     WAYLAND_wl_display_roundtrip(data->display);
+ 
++    if (SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++        SDL_WaylandOutputData *output;
++        /* Some LG compositors send the current mode but omit wl_output.done. */
++        for (output = data->output_list; output; output = output->next) {
++            if (output->index < 0 && output->native_width > 0 && output->native_height > 0) {
++                output->wl_output_done_count = (output->xdg_output != NULL);
++                display_handle_done(output, output->output);
++            }
++        }
++    }
++
+     Wayland_InitMouse();
+ 
+     /* Get the surface class name, usually the name of the application */
+diff --git a/src/video/wayland/SDL_waylandevents.c b/src/video/wayland/SDL_waylandevents.c
+--- a/src/video/wayland/SDL_waylandevents.c
++++ b/src/video/wayland/SDL_waylandevents.c
+@@ -1153,6 +1153,14 @@
+     SDL_Scancode scancode = SDL_SCANCODE_UNKNOWN;
+ 
+     if (!input->keyboard_is_virtual) {
++        if (SDL_GetHintBoolean("SDL_LEANTUBE_WEBOS", SDL_FALSE)) {
++            /* LG's IR codes in the compositor keymap include the XKB offset. */
++            switch (key) {
++            case 420: return SDL_SCANCODE_AC_BACK;
++            case 215: return SDL_SCANCODE_AUDIOPLAY;
++            case 127: return SDL_SCANCODE_PAUSE;
++            }
++        }
+         scancode = SDL_GetScancodeFromTable(SDL_SCANCODE_TABLE_XFREE86_2, key - 8);
+     } else {
+         const xkb_keysym_t *syms;
+diff --git a/src/video/wayland/SDL_waylandmouse.c b/src/video/wayland/SDL_waylandmouse.c
+--- a/src/video/wayland/SDL_waylandmouse.c
++++ b/src/video/wayland/SDL_waylandmouse.c
+@@ -482,7 +482,9 @@
+             }
+         }
+ 
+-        wl_surface_set_buffer_scale(data->surface, scale);
++        if (wl_surface_get_version(data->surface) >= WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION) {
++            wl_surface_set_buffer_scale(data->surface, scale);
++        }
+         wl_pointer_set_cursor(pointer,
+                               input->pointer_enter_serial,
+                               data->surface,

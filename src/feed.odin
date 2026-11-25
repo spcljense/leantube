@@ -3,7 +3,6 @@ package main
 import clay "../vendor/clay"
 import "./model"
 import "core:strings"
-import sdl "vendor:sdl2"
 
 // Keep image slot IDs stable for replies that are still in flight.
 remove_catalog_card :: proc(cover: int) {
@@ -13,9 +12,9 @@ remove_catalog_card :: proc(cover: int) {
 		ordered_remove(&catalog.videos, index)
 		if selected > index {selected -= 1}
 		selected = clamp(selected, 0, max(0, len(catalog.videos) - 1))
-		if cover < len(textures) {sdl.DestroyTexture(textures[cover]); textures[cover] = nil}
+		if cover < len(textures) {release_image_texture(textures[cover]); textures[cover] = nil}
 		if cover <
-		   len(card_avatars) {sdl.DestroyTexture(card_avatars[cover]); card_avatars[cover] = nil}
+		   len(card_avatars) {release_image_texture(card_avatars[cover]); card_avatars[cover] = nil}
 		if cover < len(card_labels) {
 			label := &card_labels[cover]
 			delete(label.title); delete(label.channel); delete(label.meta)
@@ -32,18 +31,16 @@ clear_catalog :: proc(keep_channel: bool = false) {
 	clear_player_channel()
 	close_card_menu()
 	catalog_revision += 1
-	for &texture in textures {
-		if texture != nil {sdl.DestroyTexture(texture); texture = nil}
-	}
+	for texture in textures {release_image_texture(texture)}
 	delete(textures); textures = nil
-	for texture in card_avatars {if texture != nil {sdl.DestroyTexture(texture)}}
+	for texture in card_avatars {release_image_texture(texture)}
 	delete(card_avatars); card_avatars = nil
 	channel: model.Channel
 	if keep_channel {channel = catalog.channel; catalog.channel = {}}
 	model.catalog_destroy(&catalog)
 	catalog.channel = channel
 	if !keep_channel &&
-	   channel_avatar != nil {sdl.DestroyTexture(channel_avatar); channel_avatar = nil}
+	   channel_avatar != nil {release_image_texture(channel_avatar); channel_avatar = nil}
 }
 // A new feed starts at its first card, with no stale focus or notice.
 begin_feed :: proc() {
@@ -166,7 +163,7 @@ apply_catalog :: proc(result: ^Network_Result) {
 		   channel_avatar != nil &&
 		   result.catalog.channel.avatar_url != "" &&
 		   result.catalog.channel.avatar_url != catalog.channel.avatar_url {
-			sdl.DestroyTexture(channel_avatar)
+			release_image_texture(channel_avatar)
 			channel_avatar = nil
 		}
 		if same_channel && result.catalog.channel.title == "" {

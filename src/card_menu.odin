@@ -358,7 +358,7 @@ apply_card_result :: proc(result: ^Network_Result) {
 				video.watch_later = action.remove ? .Absent : .Present
 			}
 		}
-		card_action_done_until = u64(sdl.GetTicks()) + 1000
+		card_action_done_until = sdl.GetTicks64() + 1000
 	}
 	dirty = true
 }

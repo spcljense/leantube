@@ -72,16 +72,12 @@ key :: proc(code: sdl.Keycode, window: ^sdl.Window = nil, mods: sdl.Keymod = {})
 			return_to_grid = true
 		case sdl.Keycode.RETURN, sdl.Keycode.SPACE, sdl.Keycode.KP_ENTER:
 			_ = player_pause(!paused)
-		case MEDIA_PLAY_KEY:
+		case sdl.Keycode.AUDIOPLAY:
 			_ = player_pause(false)
-		case MEDIA_PAUSE_KEY:
+		case sdl.Keycode.PAUSE:
 			_ = player_pause(true)
 		case sdl.Keycode.LEFT, sdl.Keycode.RIGHT:
 			queue_seek(code == sdl.Keycode.RIGHT ? 10000 : -10000)
-		case sdl.Keycode.UP, sdl.Keycode.DOWN:
-			delta: f64 = code == sdl.Keycode.DOWN ? -0.25 : 0.25
-			next := clamp(rate + delta, 0.5, 2)
-			if next != rate && player_rate(next) {rate = next}
 		}
 	}
 	dirty = true

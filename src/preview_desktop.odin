@@ -3,21 +3,29 @@ package main
 
 import clay "../vendor/clay"
 import "./model"
+import "core:c"
 import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:strings"
 import "core:sync/chan"
 import sdl "vendor:sdl2"
+import img "vendor:sdl2/image"
 
 UI_TEST :: #config(UI_TEST, false)
 UI_SCREENSHOTS :: #config(UI_SCREENSHOTS, false)
 
+window_ui_scale :: proc(window: ^sdl.Window, width, _: c.int) -> f32 {
+	logical_width: c.int
+	sdl.GetWindowSize(window, &logical_width, nil)
+	return f32(width) / f32(max(1, logical_width))
+}
+
 save_snapshot :: proc(surface: ^sdl.Surface, name: string) {
-	when UI_SCREENSHOTS {
+	if UI_SCREENSHOTS {
 		path := fmt.caprintf("build/ui-test/%s-%s.png", os.args[1], name)
 		defer delete(path)
-		assert(sdl.SavePNG(surface, path), string(sdl.GetError()))
+		assert(img.SavePNG(surface, path) == 0, string(sdl.GetError()))
 	}
 }
 
@@ -47,7 +55,7 @@ main :: proc() {
 			sdl.CreateWindowAndRenderer(
 				1280,
 				720,
-				{.RESIZABLE},
+				{.RESIZABLE, .ALLOW_HIGHDPI},
 				&window,
 				&renderer,
 			) == 0,
@@ -359,7 +367,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		math.abs(initial_view.y + initial_view.height - view_height) < 0.1,
 		"the library must reach the bottom edge",
 	)
-	assert(icon_pixels == i32(scaled(48)))
+	check_icon_resolution()
 	if os.args[1] == "4k" {
 		assert(view_width == 3840 && view_height == 2160)
 		assert(text_sizes[.Body] == BASE_TEXT_SIZES[.Body] * 2)
@@ -598,7 +606,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	start := timeline.position_ms
 	for _ in 0 ..< 3 {key(sdl.Keycode.RIGHT)}
 	assert(timeline.seek_target_ms < 0 && shown_position() == start + 30000)
-	apply_pending_seek(u64(sdl.GetTicks()) + SEEK_SETTLE_MS)
+	apply_pending_seek(sdl.GetTicks64() + SEEK_SETTLE_MS)
 	assert(!seek_pending.active && timeline.seek_target_ms == start + 30000)
 	model.seek_done(&timeline)
 	key(sdl.Keycode.AC_BACK)
@@ -651,7 +659,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		snapshot(renderer, surface, "large-grid")
 		retained := take_image_texture(image_key(catalog.videos[last].id, 0))
 		assert(retained == textures[last], "the final visible thumbnail must be retained")
-		sdl.DestroyTexture(retained)
+		release_image_texture(retained)
 	}
 	fmt.printf("%s: UI checks passed\n", os.args[1])
 }

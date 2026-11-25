@@ -19,10 +19,10 @@ padding :: proc(left, right, top, bottom: u16) -> clay.Padding {
 refresh_view :: proc(renderer: ^sdl.Renderer) -> bool {
 	width, height: c.int
 	if sdl.GetRendererOutputSize(renderer, &width, &height) != 0 {return false}
+	if width <= 0 || height <= 0 {return false}
 	scale := ui_scale // Offscreen tests provide the display scale explicitly.
 	if window := sdl.RenderGetWindow(renderer); window != nil {
-		scale = 1
-		if scale <= 0 {return false}
+		scale = window_ui_scale(window, width, height)
 	}
 	density_changed := view_width == 0 || ui_scale != scale
 	changed := view_width != f32(width) || view_height != f32(height) || density_changed
@@ -31,9 +31,9 @@ refresh_view :: proc(renderer: ^sdl.Renderer) -> bool {
 	if density_changed {
 		if !resize_text() {return false}
 		clay.ResetMeasureTextCache()
+		if !open_icons(renderer) {return false}
 	}
 	if changed {
-		if !open_icons(renderer) {return false}
 		// Cards fill each row; only their readable minimum width is a design value.
 		grid_columns = max(1, int((view_width - scaled(208) + scaled(32)) / scaled(480 + 32)))
 		library_focus_pending = true

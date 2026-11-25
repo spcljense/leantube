@@ -9,6 +9,9 @@
       },
     },
   },
+  "trustedDependencies": [
+    "@webos-tools/cli",
+  ],
   "patchedDependencies": {
     "@webos-tools/cli@3.2.6": "patches/@webos-tools%2Fcli@3.2.6.patch",
   },

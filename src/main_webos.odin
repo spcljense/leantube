@@ -58,7 +58,6 @@ reply :: proc "c" (_: rawptr, message: rawptr, _: rawptr) -> bool {
 
 main :: proc() {
 	benchmark_reader_entry()
-	_ = sdl.SetHint(sdl.HINT_VIDEODRIVER, "wayland")
 	setup_logging()
 	_ = os.remove(CONTROL_STATE)
 	if len(os.args) > 1 {
@@ -72,6 +71,10 @@ main :: proc() {
 	}
 	if posix.sigaction(.SIGTERM, &action, nil) != .OK ||
 	   posix.sigaction(.SIGINT, &action, nil) != .OK {return}
+	capture_action := posix.sigaction_t{sa_handler = capture_ui_signal}
+	if posix.sigaction(.SIGUSR1, &capture_action, nil) != .OK {
+		fmt.eprintln("UI capture signal unavailable")
+	}
 	if !start_bus(APP_ID) {os.exit(1)}
 	window: ^sdl.Window
 	renderer: ^sdl.Renderer
@@ -113,22 +116,15 @@ main :: proc() {
 		}
 	}
 	if !register_application() {return}
-	start := u64(sdl.GetTicks())
-	for !registered && u64(sdl.GetTicks()) - start < 3000 {poll_services(); sdl.Delay(10)}
+	start := sdl.GetTicks64()
+	for !registered && sdl.GetTicks64() - start < 3000 {poll_services(); sdl.Delay(10)}
 	if !registered {fmt.eprintln("registration failed"); return}
-	if sdl.Init({.VIDEO}) != 0 {fmt.eprintln("SDL init failed:", sdl.GetError()); return}
+	if !init_tv_video() {fmt.eprintln("SDL init failed:", sdl.GetError()); return}
 	window = create_window()
 	if window == nil {fmt.eprintln("window failed:", sdl.GetError()); return}
-	wm: sdl.SysWMinfo
-	if !bool(sdl.GetWindowWMInfo(window, &wm)) {fmt.eprintln("window info failed:", sdl.GetError()); return}
-	if !attach_window(
-		APP_ID,
-		wm.info.wl.display,
-		wm.info.wl.surface,
-	) {fmt.eprintln("LG window role is unavailable"); return}
 	renderer = sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	if renderer == nil {fmt.eprintln("renderer failed:", sdl.GetError()); return}
-	// Present on the panel's refresh so a frame is never shown half updated.
+	if !attach_sdl_window(window) {fmt.eprintln("LG window role is unavailable"); return}
 	if !tv_clay_abi(
 		u32(size_of(clay.RenderCommand)),
 		u32(size_of(clay.ElementDeclaration)),
@@ -147,8 +143,9 @@ main :: proc() {
 		show_notice("Network unavailable")
 	}
 	if !render(renderer) {fmt.eprintln("frame failed:", sdl.GetError()); return}
+	log_video_surface(window)
 	fmt.println("video grid presented")
-	previous_frame := u64(sdl.GetTicks())
+	previous_frame := sdl.GetTicks64()
 	for running && !window_closing && sync.atomic_load(&interrupted) == 0 {
 		poll_services()
 		if return_to_grid {stop_playback()}
@@ -164,18 +161,25 @@ main :: proc() {
 		}
 		poll_network(renderer)
 		poll_player()
-		poll_card_press(u64(sdl.GetTicks()))
+		poll_card_press(sdl.GetTicks64())
 		poll_login_tick()
-		apply_pending_seek(u64(sdl.GetTicks()))
+		apply_pending_seek(sdl.GetTicks64())
 		auto_skip_sponsor()
 		write_control_state()
 		expire_player_controls()
-		now := u64(sdl.GetTicks())
+		now := sdl.GetTicks64()
 		expire_toast(now)
 		frame_dt := f32(min(now - previous_frame, 50)) / 1000
 		previous_frame = now
 		if !window_visible {running = false}
-		if dirty || loading_active() {if !render(renderer, wheel, frame_dt) {break}; dirty = false}
+		before_present: proc(^sdl.Renderer)
+		if sync.atomic_exchange(&capture_ui_requested, 0) != 0 && browsing && !login_screen {
+			before_present = save_ui_frame
+		}
+		if dirty || loading_active() || before_present != nil {
+			if !render(renderer, wheel, frame_dt, before_present) {break}
+			dirty = false
+		}
 	}
 	fmt.println("player stopping")
 }
