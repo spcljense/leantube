@@ -17,7 +17,7 @@ lightweight native YouTube client for webOS
 2. enter this repository URL:
 
     ```text
-    https://github.com/hyperpuncher/leantube/releases/latest/download/repo.json
+    https://github.com/spcljense/leantube/releases/latest/download/repo.json
     ```
 
 3. select **Add repository**, then return to the app list.
@@ -25,3 +25,9 @@ lightweight native YouTube client for webOS
 
 see [compatibility and build details](docs/compatibility.md) and
 [display and UI resolution](docs/display.md).
+
+## acknowledgments
+
+Thanks to hyperpuncher for creating LeanTube and sharing it as open source.
+This fork builds on that work with SDL2 compatibility fixes for webOS 5.
+[Original LeanTube project](https://github.com/hyperpuncher/leantube)
