@@ -10,6 +10,7 @@ import "core:fmt"
 import "core:strings"
 import "core:sync"
 import "core:time"
+import sdl "vendor:sdl2"
 
 // The C++ type stays opaque. Only the upstream C interface crosses this boundary.
 Starfish :: struct {}
@@ -54,6 +55,8 @@ foreign starfish {
 	// JSON: playRate is a multiplier; audioOutput:true keeps audio enabled.
 	@(link_name = "StarfishMediaAPIs_setPlayRate")
 	sf_rate :: proc(_: ^Starfish, _: cstring) -> bool ---
+	@(link_name = "StarfishMediaAPIs_mute")
+	sf_mute :: proc(_: ^Starfish) -> bool ---
 	// Position is in plain milliseconds. Seek_Done reports completion.
 	@(link_name = "StarfishMediaAPIs_seek")
 	sf_seek :: proc(_: ^Starfish, _: cstring) -> bool ---
@@ -123,6 +126,7 @@ decoder_close :: proc(api: ^Starfish, status: ^Decoder_Status) -> bool {
 decoder_open :: proc(
 	v, a: ^reader.Track,
 	target: f64,
+	viewport: Maybe(sdl.Rect) = nil,
 ) -> (
 	api: ^Starfish,
 	status: ^Decoder_Status,
@@ -146,7 +150,7 @@ decoder_open :: proc(
 		hdr,
 	)
 	defer delete(metadata)
-	if !attach_display(APP_ID, id, metadata, v.width, v.height) {
+	if !attach_display(APP_ID, id, metadata, v.width, v.height, viewport) {
 		release_display()
 		sf_destroy(api)
 		free(status)

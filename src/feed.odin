@@ -4,6 +4,8 @@ import clay "../vendor/clay"
 import "./model"
 import "core:strings"
 
+pagination_failed: bool
+
 // Keep image slot IDs stable for replies that are still in flight.
 remove_catalog_card :: proc(cover: int) {
 	for &video, index in catalog.videos {
@@ -14,7 +16,9 @@ remove_catalog_card :: proc(cover: int) {
 		selected = clamp(selected, 0, max(0, len(catalog.videos) - 1))
 		if cover < len(textures) {release_image_texture(textures[cover]); textures[cover] = nil}
 		if cover <
-		   len(card_avatars) {release_image_texture(card_avatars[cover]); card_avatars[cover] = nil}
+		   len(
+			   card_avatars,
+		   ) {release_image_texture(card_avatars[cover]); card_avatars[cover] = nil}
 		if cover < len(card_labels) {
 			label := &card_labels[cover]
 			delete(label.title); delete(label.channel); delete(label.meta)
@@ -44,6 +48,7 @@ clear_catalog :: proc(keep_channel: bool = false) {
 }
 // A new feed starts at its first card, with no stale focus or notice.
 begin_feed :: proc() {
+	pagination_failed = false
 	channel_focus, rail_focus = false, false
 	restore_selected = -1
 	page += 1
@@ -56,10 +61,12 @@ begin_feed :: proc() {
 }
 
 request_feed :: proc(request: Network_Request) {
+	append := request.continuation != ""
 	search_loading = true
 	dirty = true
 	if !submit_network(request) {
 		search_loading = false
+		pagination_failed = append
 		show_notice("Network unavailable")
 	}
 }
@@ -86,6 +93,7 @@ start_browse :: proc(id: string, params: string = "", filter: string = "", remem
 
 load_more :: proc() {
 	if search_loading ||
+	   pagination_failed ||
 	   catalog.continuation == "" ||
 	   (browse_id == "" && catalog.query == "") {return}
 	request_feed(
@@ -135,7 +143,11 @@ apply_catalog :: proc(result: ^Network_Result) {
 	first_cover := result.append ? len(textures) : 0
 	next_cover := first_cover
 	search_loading = false
-	if result.error != .None {show_notice("Could not load this page"); return}
+	if result.error != .None {
+		pagination_failed = result.append
+		show_notice(result.append ? "Could not load more videos" : "Could not load this page")
+		return
+	}
 	if browse_id == "VLWL" {
 		for &video in result.catalog.videos {video.watch_later = .Present}
 	}
@@ -152,6 +164,10 @@ apply_catalog :: proc(result: ^Network_Result) {
 			append(&catalog.videos, video)
 		}
 		clear(&result.catalog.videos)
+		if catalog.continuation == result.catalog.continuation {
+			delete(result.catalog.continuation)
+			result.catalog.continuation = ""
+		}
 		delete(catalog.continuation)
 		catalog.continuation = result.catalog.continuation
 		result.catalog.continuation = ""

@@ -12,6 +12,8 @@ Navigation :: enum {
 	Home,
 	Playlists,
 	Liked,
+	SponsorBlock,
+	Settings,
 }
 NAV_ITEMS := [Navigation]struct {
 	icon:             Icon,
@@ -25,6 +27,8 @@ NAV_ITEMS := [Navigation]struct {
 	.Home          = {.Home, "Home", "FEwhat_to_watch"},
 	.Playlists     = {.Playlists, "Playlists", "FEplaylist_aggregation"},
 	.Liked         = {.Liked, "Liked videos", "VLLL"},
+	.SponsorBlock  = {.SponsorBlock, "SponsorBlock", ""},
+	.Settings      = {.Settings, "Settings", ""},
 }
 browse_id: string
 rail_focus: bool
@@ -52,6 +56,15 @@ activate_navigation :: proc(item: Navigation, window: ^sdl.Window = nil) {
 		} else {start_login()}
 	case .Search:
 		edit_search(window)
+	case .SponsorBlock:
+		if search_editing {finish_search_input(window)}
+		sponsor_menu = true
+		sponsor_menu_selected = .Sponsor
+	case .Settings:
+		if search_editing {finish_search_input(window)}
+		settings_menu = true
+		settings_quality_menu = false
+		settings_cursor = 0
 	case .Subscriptions, .Watch_Later, .History, .Home, .Playlists, .Liked:
 		if search_editing {finish_search_input(window)}
 		if !signed_in {start_login(); return}
@@ -77,7 +90,7 @@ navigation_key :: proc(code: sdl.Keycode, window: ^sdl.Window) -> bool {
 	case sdl.Keycode.UP:
 		rail_cursor = Navigation(max(0, int(rail_cursor) - 1))
 	case sdl.Keycode.DOWN:
-		rail_cursor = Navigation(min(int(Navigation.Liked), int(rail_cursor) + 1))
+		rail_cursor = Navigation(min(int(Navigation.Settings), int(rail_cursor) + 1))
 	case sdl.Keycode.RIGHT:
 		rail_focus = false
 		channel_focus = len(catalog.channel.tabs) > 0
@@ -94,9 +107,9 @@ navigation_key :: proc(code: sdl.Keycode, window: ^sdl.Window) -> bool {
 }
 
 navigation_layout :: proc() {
-	// Keep full-size icons; reduce only the gaps on shorter screens.
+	size := min(scaled(72), (view_height - scaled(64)) / f32(len(NAV_ITEMS)))
 	gap := clamp(
-		(view_height - scaled(64 + 72 * len(NAV_ITEMS))) / f32(len(NAV_ITEMS) - 1),
+		(view_height - scaled(64) - size * f32(len(NAV_ITEMS))) / f32(len(NAV_ITEMS) - 1),
 		0,
 		scaled(20),
 	)
@@ -118,15 +131,12 @@ navigation_layout :: proc() {
 			if clay.UI(clay.ID("navigation-item", u32(item)))(
 			{
 				layout = {
-					sizing = {
-						width = clay.SizingFixed(scaled(72)),
-						height = clay.SizingFixed(scaled(72)),
-					},
+					sizing = {width = clay.SizingFixed(size), height = clay.SizingFixed(size)},
 					padding = clay.PaddingAll(spacing(3)),
 					childAlignment = {x = .Center, y = .Center},
 				},
 				backgroundColor = focused ? COLOR_TEXT : clay.Color{},
-				cornerRadius = clay.CornerRadiusAll(scaled(36)),
+				cornerRadius = clay.CornerRadiusAll(size / 2),
 			},
 			) {
 				if clay.UI()(
@@ -136,13 +146,17 @@ navigation_layout :: proc() {
 						childAlignment = {x = .Center, y = .Center},
 					},
 					backgroundColor = hover || active || focused ? COLOR_SURFACE : COLOR_BACKGROUND,
-					cornerRadius = clay.CornerRadiusAll(scaled(33)),
+					cornerRadius = clay.CornerRadiusAll(size / 2 - scaled(3)),
 				},
 				) {
 					if item ==
 					   .Account {account_button(true)} else {icon(NAV_ITEMS[item].icon, 32)}
 				}
-				if (focused || hover) && !account_menu && !card_menu {
+				if (focused || hover) &&
+				   !account_menu &&
+				   !card_menu &&
+				   !sponsor_menu &&
+				   !settings_menu {
 					if clay.UI(clay.ID("navigation-tooltip", u32(item)))(
 					{
 						layout = {padding = padding(16, 16, 8, 8)},

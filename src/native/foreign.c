@@ -85,8 +85,8 @@ bool lt_export_window(struct wl_display *display, struct wl_surface *surface) {
 
 const char *lt_window_id(void) { return window_id[0] == '\0' ? NULL : window_id; }
 
-bool lt_set_window(int32_t source_width, int32_t source_height, int32_t destination_width,
-				   int32_t destination_height) {
+bool lt_set_window(int32_t source_width, int32_t source_height, int32_t x, int32_t y,
+				   int32_t destination_width, int32_t destination_height) {
 	if (exported == NULL || compositor == NULL)
 		return false;
 	struct wl_region *source = wl_compositor_create_region(compositor);
@@ -99,7 +99,7 @@ bool lt_set_window(int32_t source_width, int32_t source_height, int32_t destinat
 		return false;
 	}
 	wl_region_add(source, 0, 0, source_width, source_height);
-	wl_region_add(destination, 0, 0, destination_width, destination_height);
+	wl_region_add(destination, x, y, destination_width, destination_height);
 	wl_webos_exported_set_exported_window(exported, source, destination);
 	wl_region_destroy(source);
 	wl_region_destroy(destination);

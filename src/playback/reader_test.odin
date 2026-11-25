@@ -102,3 +102,14 @@ custom_io_seek_handles_size_and_bounds :: proc(t: ^testing.T) {
 	testing.expect_value(t, http_seek(&h, 101, 0), i64(ERROR_ARGUMENT))
 	testing.expect_value(t, h.position, i64(90))
 }
+@(test)
+read_ahead_respects_audio_and_video_memory_budgets :: proc(t: ^testing.T) {
+	video := Track{queued_bytes = VIDEO_BUFFER_BYTES - 1}
+	audio := Track{media_type = 1, queued_bytes = AUDIO_BUFFER_BYTES - 1}
+	testing.expect(t, !would_exceed_buffer_bytes(&video, 1))
+	testing.expect(t, would_exceed_buffer_bytes(&video, 2))
+	testing.expect(t, !would_exceed_buffer_bytes(&audio, 1))
+	testing.expect(t, would_exceed_buffer_bytes(&audio, 2))
+	audio.queued_bytes = 0
+	testing.expect(t, !would_exceed_buffer_bytes(&audio, AUDIO_BUFFER_BYTES + 1))
+}

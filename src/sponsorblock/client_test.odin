@@ -11,6 +11,39 @@ lookup_uses_the_documented_private_hash_prefix :: proc(t: ^testing.T) {
 }
 
 @(test)
+lookup_requests_only_enabled_categories :: proc(t: ^testing.T) {
+	url := request_url("dQw4w9WgXcQ", {.Intro, .Outro, .Self_Promotion})
+	defer delete(url)
+	testing.expect_value(
+		t,
+		url,
+		"https://sponsor.ajay.app/api/skipSegments/5f6b?category=intro&category=outro&category=selfpromo",
+	)
+}
+
+@(test)
+selected_categories_drive_skips :: proc(t: ^testing.T) {
+	data := `[{"videoID":"test","segments":[
+		{"category":"intro","actionType":"skip","segment":[0,1]},
+		{"category":"selfpromo","actionType":"skip","segment":[2,3]},
+		{"category":"outro","actionType":"skip","segment":[8,10]},
+		{"category":"outro","actionType":"mute","segment":[1,2]},
+		{"category":"sponsor","actionType":"skip","segment":[4,6]}
+	]}]`
+	segments, valid := parse(data, "test", {.Intro, .Outro, .Self_Promotion})
+	defer delete(segments)
+	testing.expect(t, valid)
+	if !testing.expect_value(t, len(segments), 3) {return}
+	testing.expect_value(t, segments[0].category, .Intro)
+	testing.expect_value(t, segments[1].category, .Self_Promotion)
+	testing.expect_value(t, segments[2].category, .Outro)
+	testing.expect_value(t, skip_target(segments[:], 0, 10000), f64(1000))
+	testing.expect_value(t, skip_target(segments[:], 2000, 10000), f64(3000))
+	testing.expect_value(t, skip_target(segments[:], 4000, 10000), f64(-1))
+	testing.expect_value(t, skip_target(segments[:], 8000, 10000), f64(10000))
+}
+
+@(test)
 segments_only_match_the_exact_video_and_supported_action :: proc(t: ^testing.T) {
 	segments, valid := parse(
 		`[

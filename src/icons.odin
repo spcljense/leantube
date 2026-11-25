@@ -24,6 +24,8 @@ Icon :: enum {
 	Liked,
 	Spinner,
 	Hide,
+	SponsorBlock,
+	Settings,
 }
 icon_assets := [Icon]struct {
 	file: string,
@@ -45,6 +47,8 @@ icon_assets := [Icon]struct {
 	.Liked             = {"thumbs-up", {32, 0, 0, 0}},
 	.Spinner           = {"loader-circle", {24, 32, 40, 48}},
 	.Hide              = {"eye-off", {32, 0, 0, 0}},
+	.SponsorBlock      = {"skip-forward", {32, 0, 0, 0}},
+	.Settings          = {"sliders", {32, 0, 0, 0}},
 }
 icons: [Icon][4]^sdl.Texture
 

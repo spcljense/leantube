@@ -179,9 +179,10 @@ render :: proc(
 	}
 	if !set_color(renderer, color) || sdl.RenderClear(renderer) != 0 {return false}
 	// Clay borrows these strings until the render commands have been drawn.
-	elapsed, total, speed, quality: string
+	elapsed, total, speed, quality, title: string
+	title_owned: bool
 	// quality is a static label and must not be freed.
-	defer {delete(elapsed); delete(total); delete(speed)}
+	defer {delete(elapsed); delete(total); delete(speed); if title_owned {delete(title)}}
 	// Each scroll update must have a layout. Idle updates without layouts
 	// make Clay discard the container and its saved scroll position.
 	if browsing {clay.UpdateScrollContainers(false, {0, wheel}, dt)}
@@ -194,7 +195,16 @@ render :: proc(
 		total = model.time_label(duration_ms, "--:--")
 		quality = model.quality_label(stream_width, stream_height)
 		if player_rate_supported() {speed = fmt.aprintf("%g×", rate)}
-		player_layout(elapsed, total, speed, quality)
+		if selected >= 0 && selected < len(catalog.videos) {
+			video := catalog.videos[selected]
+			width := view_width - f32(2 * spacing(PLAYER_HEADER_INSET) + spacing(PLAYER_HEADER_GAP)) -
+				scaled(PLAYER_AVATAR_SIZE + 16)
+			if video.has_4k {width -= scaled(UHD_BADGE_WIDTH) + f32(spacing(UHD_BADGE_GAP))}
+			title, title_owned, _ = wrap_title(fonts[.Player_Title], video.title, c.int(width))
+		}
+		player_layout(elapsed, total, speed, quality, title)
+		if quality_menu {quality_menu_layout()}
+		if autoplay_deadline != 0 {autoplay_layout()}
 	}
 	toast_layout()
 	commands := clay.EndLayout(0)
@@ -222,9 +232,9 @@ render :: proc(
 		commands = clay.EndLayout(0)
 	}
 	// Keep two screens in reserve for both remote and wheel scrolling.
-	if browsing && notice == "" {
+	if browsing {
 		scroll := clay.GetScrollContainerData(clay.ID("library-scroll"))
-		if scroll.found &&
+		if scroll.found && scroll.scrollPosition != nil &&
 		   scroll.contentDimensions.height + scroll.scrollPosition^[1] <=
 			   scroll.scrollContainerDimensions.height * 3 {
 			load_more()
@@ -345,6 +355,12 @@ render_commands :: proc(
 			}
 		case .Custom:
 			data := command.renderData.custom
+			if data.customData == &feed_preview_visible {
+				if sdl.SetRenderDrawBlendMode(renderer, .NONE) != 0 {return false}
+				cleared := set_color(renderer, {}) && sdl.RenderFillRectF(renderer, &rect) == 0
+				if sdl.SetRenderDrawBlendMode(renderer, .BLEND) != 0 || !cleared {return false}
+				continue
+			}
 			if data.customData == &search_editor {
 				if !render_search_text(
 					renderer,
@@ -370,7 +386,8 @@ render_commands :: proc(
 			if text.stringContents.length == 0 {continue}
 			clip := clips[len(clips) - 1]
 			continued := false
-			if i + 1 < commands.length {
+			style := Text_Style(text.fontId)
+			if style != .Video_Title && style != .Player_Title && i + 1 < commands.length {
 				next := clay.RenderCommandArray_Get(&commands, i + 1)
 				continued =
 					next.commandType == .Text &&
@@ -378,7 +395,7 @@ render_commands :: proc(
 						text.stringContents.baseChars &&
 					next.boundingBox.y >= f32(clip.y + clip.h)
 			}
-			font := fonts[Text_Style(text.fontId)]
+			font := fonts[style]
 			available := f32(clip.x + clip.w) - box.x
 			display, owned := fit_text(
 				font,

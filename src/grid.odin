@@ -43,15 +43,20 @@ labels_build :: proc(metrics: Grid_Metrics) {
 	resize(&card_labels, len(textures))
 	for video in catalog.videos {
 		if video.cover_index < first_cover {continue}
-		title, title_owned, title_lines := fit_wrapped(
+		title, title_owned, title_lines := wrap_title(
 			fonts[.Video_Title],
 			video.title,
-			c.int(width),
-			2,
+			c.int(
+				width - (video.has_4k ? scaled(UHD_BADGE_WIDTH) + f32(spacing(UHD_BADGE_GAP)) : 0),
+			),
 		)
 		channel_width :=
 			width - (model.video_channel_id(video) != "" ? scaled(CARD_AVATAR_SIZE + 16) : 0)
-		channel, channel_owned := fit_text(fonts[.Card_Metadata], video.channel, c.int(channel_width))
+		channel, channel_owned := fit_text(
+			fonts[.Card_Metadata],
+			video.channel,
+			c.int(channel_width),
+		)
 		meta, meta_owned := fit_text(fonts[.Card_Metadata], video.meta, c.int(width))
 		card_labels[video.cover_index] = {
 			title       = title_owned ? title : strings.clone(title),
@@ -234,6 +239,8 @@ grid_layout :: proc() {
 		}
 		if search_editing {search_layout()}
 		if account_menu {account_menu_layout()}
+		if sponsor_menu {sponsor_menu_layout()}
+		if settings_menu {settings_layout()}
 		if card_menu {card_menu_layout()}
 	}
 }
@@ -272,6 +279,7 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 		{
 			layout = {sizing = {width = clay.SizingGrow({})}},
 			image = {imageData = rawptr(textures[video.cover_index])},
+			custom = {customData = feed_preview_visible && focused ? &feed_preview_visible : nil},
 			backgroundColor = textures[video.cover_index] == nil ? COLOR_SURFACE : clay.Color{},
 			aspectRatio = {16.0 / 9.0},
 			cornerRadius = corners,
@@ -358,9 +366,18 @@ video_card :: proc(index: int, metrics: Grid_Metrics) {
 						width = clay.SizingGrow({}),
 						height = clay.SizingFixed(f32(shape.lines) * metrics.line),
 					},
+					childGap = spacing(UHD_BADGE_GAP),
 				},
 			},
-			) {label(title, .Video_Title, focused ? COLOR_BACKGROUND : COLOR_TEXT, wrap = .Newlines)}
+			) {
+				if video.has_4k {uhd_badge(clay.ID("card-4k", u32(index)), .Video_Title, focused)}
+				label(
+					title,
+					.Video_Title,
+					focused ? COLOR_BACKGROUND : COLOR_TEXT,
+					wrap = .Newlines,
+				)
+			}
 			if clay.UI(clay.ID("card-channel", u32(index)))(
 			{
 				layout = {

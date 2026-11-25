@@ -5,9 +5,34 @@ import "../model"
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
+import "core:strings"
+
+Category :: enum {
+	Sponsor,
+	Intro,
+	Outro,
+	Self_Promotion,
+	Interaction,
+	Preview,
+	Filler,
+	Music_Offtopic,
+}
+Categories :: bit_set[Category;u8]
+DEFAULT_CATEGORIES :: Categories{.Sponsor}
+CATEGORY_IDS := [Category]string {
+	.Sponsor        = "sponsor",
+	.Intro          = "intro",
+	.Outro          = "outro",
+	.Self_Promotion = "selfpromo",
+	.Interaction    = "interaction",
+	.Preview        = "preview",
+	.Filler         = "filler",
+	.Music_Offtopic = "music_offtopic",
+}
 
 Segment :: struct {
 	start_ms, end_ms, video_duration_ms: f64,
+	category:                            Category,
 	skipped:                             bool,
 }
 
@@ -27,7 +52,13 @@ endpoint :: proc(id: string) -> string {
 	return fmt.aprintf("https://sponsor.ajay.app/api/skipSegments/%02x%02x", digest[0], digest[1])
 }
 
-parse :: proc(data, id: string) -> (segments: [dynamic]Segment, valid: bool) {
+parse :: proc(
+	data, id: string,
+	enabled: Categories = DEFAULT_CATEGORIES,
+) -> (
+	segments: [dynamic]Segment,
+	valid: bool,
+) {
 	value, error := json.parse(data)
 	if error != .None {return nil, false}
 	defer json.destroy_value(value)
@@ -42,9 +73,11 @@ parse :: proc(data, id: string) -> (segments: [dynamic]Segment, valid: bool) {
 		for item in items {
 			object, item_valid := item.(json.Object)
 			if !item_valid {continue}
-			category, _ := object["category"].(json.String)
+			category_id, _ := object["category"].(json.String)
 			action, _ := object["actionType"].(json.String)
-			if category != "sponsor" || action != "skip" {continue}
+			if action != "skip" {continue}
+			category, category_enabled := enabled_category(category_id, enabled)
+			if !category_enabled {continue}
 			times, _ := object["segment"].(json.Array)
 			if len(times) != 2 {continue}
 			start, a := model.number(times[0])
@@ -57,6 +90,7 @@ parse :: proc(data, id: string) -> (segments: [dynamic]Segment, valid: bool) {
 					start_ms = start * 1000,
 					end_ms = end * 1000,
 					video_duration_ms = length * 1000,
+					category = category,
 				},
 			)
 		}
@@ -64,27 +98,59 @@ parse :: proc(data, id: string) -> (segments: [dynamic]Segment, valid: bool) {
 	return segments, true
 }
 
-fetch :: proc(client: ^http.Client, id: string) -> (segments: [dynamic]Segment) {
-	url := endpoint(id)
+enabled_category :: proc(id: string, enabled: Categories) -> (Category, bool) {
+	for candidate in Category {
+		if candidate in enabled && CATEGORY_IDS[candidate] == id {return candidate, true}
+	}
+	return {}, false
+}
+
+request_url :: proc(id: string, enabled: Categories) -> string {
+	base := endpoint(id)
+	defer delete(base)
+	query := strings.builder_make()
+	strings.write_string(&query, base)
+	separator := "?"
+	for category in Category {
+		if category not_in enabled {continue}
+		strings.write_string(&query, separator)
+		strings.write_string(&query, "category=")
+		strings.write_string(&query, CATEGORY_IDS[category])
+		separator = "&"
+	}
+	return strings.to_string(query)
+}
+
+fetch :: proc(
+	client: ^http.Client,
+	id: string,
+	enabled: Categories = DEFAULT_CATEGORIES,
+) -> (
+	segments: [dynamic]Segment,
+) {
+	if enabled == {} {return nil}
+	url := request_url(id, enabled)
 	defer delete(url)
 	response, error := http.request(client, url, timeout_ms = 2000)
 	if error != nil {return nil}
 	defer delete(response.body)
 	if response.status != 200 {return nil} 	// 404 means that there are no segments.
-	segments, _ = parse(string(response.body[:]), id)
+	segments, _ = parse(string(response.body[:]), id, enabled)
 	return
 }
 
-// Shared by the skip action and its timeline markers.
-can_skip :: proc(segment: Segment, duration_ms: f64) -> bool {
+valid_span :: proc(segment: Segment, duration_ms: f64) -> bool {
 	return(
-		!segment.skipped &&
 		segment.start_ms >= 0 &&
 		segment.end_ms > segment.start_ms &&
 		segment.end_ms <= duration_ms &&
 		(segment.video_duration_ms <= 0 ||
 				math.abs(segment.video_duration_ms - duration_ms) <= 1000) \
 	)
+}
+
+can_skip :: proc(segment: Segment, duration_ms: f64) -> bool {
+	return !segment.skipped && valid_span(segment, duration_ms)
 }
 
 // Skip an overlapping group once per playback. This avoids repeating a seek

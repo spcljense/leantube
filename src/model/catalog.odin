@@ -25,6 +25,7 @@ Video :: struct {
 	browse_id, thumbnail_url, avatar_url: string,
 	actions:                              [dynamic]Card_Action,
 	watch_later:                          Watch_Later_State,
+	has_4k:                              bool,
 }
 
 // Reject positions a decoder cannot use, including one at the known end.
@@ -32,7 +33,7 @@ video_resume_position :: proc(video: Video) -> f64 {
 	position := video.resume_ms
 	if math.is_nan(position) || math.is_inf(position) || position < 0 {return 0}
 	if video.duration_ms > 0 && position >= video.duration_ms {return 0}
-	return position
+	return max(0, position - 10_000)
 }
 
 Catalog :: struct {
@@ -61,6 +62,10 @@ quality_tier_index :: proc(width, height: int) -> int {
 quality_label :: proc(width, height: int) -> string {
 	index := quality_tier_index(width, height)
 	return index >= 0 ? QUALITY_TIERS[index].label : ""
+}
+
+is_4k :: proc(width, height: int) -> bool {
+	return width > 0 && height > 0 && (max(width, height) >= 3840 || min(width, height) >= 2160)
 }
 
 

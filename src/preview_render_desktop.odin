@@ -223,22 +223,24 @@ check_text_fitting :: proc() {
 		if digit == '0' {advance = width}
 		assert(width == advance, "digits must not change width")
 	}
-	// A wrapped title is fitted to two lines and keeps the trailing ellipsis.
-	wrapped, wrapped_owned, wrapped_lines := fit_wrapped(
+	long_title := "A very long video title that keeps going well past two lines of text for the card"
+	wrapped, wrapped_owned, wrapped_lines := wrap_title(
 		fonts[.Video_Title],
-		"a very long video title that keeps going well past two lines of text for the card",
-		400,
-		2,
+		long_title,
+		300,
 	)
 	defer if wrapped_owned {delete(wrapped)}
-	assert(wrapped_lines == 2 && strings.has_suffix(wrapped, "…"))
-	break_at := strings.index_byte(wrapped, '\n')
-	assert(break_at > 0 && break_at + 1 < len(wrapped))
-	lines := [2]string{wrapped[:break_at], wrapped[break_at + 1:]}
+	assert(wrapped_lines > 2)
+	lines := strings.split(wrapped, "\n")
+	defer delete(lines)
+	assert(len(lines) == wrapped_lines)
+	recombined := strings.join(lines, " ")
+	defer delete(recombined)
+	assert(recombined == long_title)
 	for line in lines {
 		width: c.int
-		assert(measure_utf8(fonts[.Video_Title], line, &width, nil) && width <= 400)
+		assert(measure_utf8(fonts[.Video_Title], line, &width, nil) && width <= 300)
 	}
-	fits, fits_owned, fits_lines := fit_wrapped(fonts[.Video_Title], "short title", 400, 2)
+	fits, fits_owned, fits_lines := wrap_title(fonts[.Video_Title], "short title", 400)
 	assert(!fits_owned && fits_lines == 1 && fits == "short title")
 }

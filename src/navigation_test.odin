@@ -27,8 +27,8 @@ remote_moves_between_rail_and_cards_without_changing_the_selected_card :: proc(t
 	navigation_key(sdl.Keycode.DOWN, nil)
 	testing.expect_value(t, rail_cursor, .Subscriptions)
 	for _ in 0 ..< 8 {navigation_key(sdl.Keycode.DOWN, nil)}
-	testing.expect_value(t, rail_cursor, .Liked)
-	for _ in 0 ..< 8 {navigation_key(sdl.Keycode.UP, nil)}
+	testing.expect_value(t, rail_cursor, .Settings)
+	for _ in 0 ..< 9 {navigation_key(sdl.Keycode.UP, nil)}
 	testing.expect_value(t, rail_cursor, .Account)
 	navigation_key(sdl.Keycode.RIGHT, nil)
 	testing.expect(t, !rail_focus)

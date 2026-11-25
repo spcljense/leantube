@@ -34,11 +34,12 @@ handle_event :: proc(renderer: ^sdl.Renderer, event: sdl.Event) -> (wheel: f32) 
 		}
 	case .MOUSEWHEEL:
 		card_press.active = false
-		if browsing {
+		if browsing && !sponsor_menu && !settings_menu {
 			controls_pointer(renderer, f32(event.wheel.mouseX), f32(event.wheel.mouseY), false, false)
 			wheel = event.wheel.preciseY
 			if wheel == 0 {wheel = f32(event.wheel.y)}
 			if event.wheel.direction != 0 {wheel = -wheel}
+			if wheel < 0 {pagination_failed = false}
 		}
 	case .MOUSEMOTION:
 		controls_pointer(

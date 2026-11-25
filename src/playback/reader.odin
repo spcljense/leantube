@@ -10,7 +10,9 @@ import "core:time"
 import curl "vendor:curl"
 
 STARTUP_SECONDS :: 3.0
-MAXIMUM_SECONDS :: 20.0
+MAXIMUM_SECONDS :: 60.0
+VIDEO_BUFFER_BYTES :: 48 * 1024 * 1024
+AUDIO_BUFFER_BYTES :: 4 * 1024 * 1024
 Options :: struct {
 	mode:                 string,
 	receive_buffer_bytes: c.int,
@@ -40,7 +42,7 @@ Track :: struct {
 	mutex:                                                         sync.Mutex,
 	changed:                                                       sync.Cond,
 	packets:                                                       queue.Queue(Packet),
-	eof, at_limit:                                                 bool,
+	eof, at_limit, byte_limited:                                   bool,
 	queued_bytes, read_bytes, io_bytes, discarded:                 i64,
 	end, skip_boundary, skip_gap:                                  f64,
 	width, height:                                                 c.int,
@@ -94,7 +96,7 @@ clear_track :: proc(t: ^Track) {
 		av_packet_free(&p.packet)
 	}
 	t.queued_bytes = 0
-	t.eof, t.at_limit = false, false
+	t.eof, t.at_limit, t.byte_limited = false, false, false
 }
 // Call these queue queries with the track mutex held.
 current_packet :: proc(t: ^Track) -> bool {
@@ -107,6 +109,17 @@ span_closed :: proc(t: ^Track) -> bool {
 	return t.eof || sync.atomic_load(&t.state.generation) != t.state.consumer_generation
 }
 span_drained :: proc(t: ^Track) -> bool {return span_closed(t) && !current_packet(t)}
+// An empty queue can always accept one packet. Start playback with the
+// available data if an unusually large stream hits the memory cap first.
+would_exceed_buffer_bytes :: proc(t: ^Track, packet_bytes: i64) -> bool {
+	limit := t.media_type == 0 ? VIDEO_BUFFER_BYTES : AUDIO_BUFFER_BYTES
+	return t.queued_bytes > 0 && t.queued_bytes + packet_bytes > i64(limit)
+}
+
+startup_buffered :: proc(t: ^Track, available_seconds: f64) -> bool {
+	return current_packet(t) && (available_seconds >= STARTUP_SECONDS || t.eof || t.byte_limited)
+}
+
 ahead :: proc(t: ^Track, clock: f64) -> f64 {
 	if queue.len(t.packets) == 0 {return 0}
 	end := t.end
@@ -307,11 +320,14 @@ read_track :: proc(worker: ^thread.Thread) {
 			front_gap: f64
 			if queue.len(t.packets) > 0 &&
 			   queue.front(&t.packets).generation != h.cancel.generation {front_gap = t.skip_gap}
-			if end - sync.atomic_load(&s.position) - gap <= MAXIMUM_SECONDS &&
+			t.byte_limited = would_exceed_buffer_bytes(t, i64(p.size))
+			if !t.byte_limited &&
+			   end - sync.atomic_load(&s.position) - gap <= MAXIMUM_SECONDS &&
 			   (queue.len(t.packets) == 0 ||
 					   end - queue.front(&t.packets).pts - front_gap <= MAXIMUM_SECONDS) {break}
 			sync.cond_wait(&t.changed, &t.mutex)
 		}
+		t.byte_limited = false
 		if cancelled(&h.cancel) {av_packet_free(&p)} else {
 			if ok, _ := queue.push_back(
 				&t.packets,

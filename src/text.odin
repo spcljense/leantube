@@ -211,23 +211,13 @@ fit_text :: proc(
 	return strings.concatenate({prefix, ELLIPSIS}), true
 }
 
-// Wrap text into at most max_lines at width, ellipsizing the last visible line.
-// Return the original for a single line. Wrapped results carry explicit breaks.
-fit_wrapped :: proc(
-	font: ^ttf.Font,
-	text: string,
-	width: c.int,
-	max_lines: int,
-) -> (
-	string,
-	bool,
-	int,
-) {
-	if text == "" || width <= 0 || max_lines < 1 {return text, false, 1}
+// Return the original for a single line. Wrapped titles carry explicit breaks.
+wrap_title :: proc(font: ^ttf.Font, text: string, width: c.int) -> (string, bool, int) {
+	if text == "" || width <= 0 {return text, false, 1}
 	remaining := text
 	wrapped := strings.builder_make()
 	defer strings.builder_destroy(&wrapped)
-	for line in 1 ..= max_lines {
+	for line := 1;; line += 1 {
 		paragraph := remaining
 		if newline := strings.index_byte(remaining, '\n');
 		   newline >= 0 {paragraph = remaining[:newline]}
@@ -237,20 +227,23 @@ fit_wrapped :: proc(
 			strings.write_string(&wrapped, remaining)
 			return strings.clone(strings.to_string(wrapped)), true, line
 		}
-		if line == max_lines || (end == 0 && paragraph != "") {
-			fitted, owned := fit_text(font, paragraph, width, true)
-			defer if owned {delete(fitted)}
-			strings.write_string(&wrapped, fitted)
-			return strings.clone(strings.to_string(wrapped)), true, line
+		if end == len(paragraph) {
+			strings.write_string(&wrapped, paragraph)
+			strings.write_byte(&wrapped, '\n')
+			remaining = remaining[end + 1:]
+			continue
 		}
-		if end < len(paragraph) && paragraph[end] != ' ' {
+		if end == 0 {
+			iterator := utf8.decode_grapheme_iterator_make(paragraph)
+			grapheme, _, _ := utf8.decode_grapheme_iterate(&iterator)
+			end = len(grapheme)
+		} else if paragraph[end] != ' ' {
 			if space := strings.last_index_byte(paragraph[:end], ' '); space > 0 {end = space}
 		}
 		strings.write_string(&wrapped, strings.trim_right_space(paragraph[:end]))
 		strings.write_byte(&wrapped, '\n')
-		remaining = strings.trim_left_space(remaining[end:])
+		remaining = strings.trim_left(remaining[end:], " \t")
 	}
-	return text, false, 1
 }
 
 close_text :: proc() {

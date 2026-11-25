@@ -16,6 +16,9 @@ fake_player :: proc(
 	profile: Profile,
 	visitor: string,
 	_: []Video_Limit,
+	_: int,
+	_: bool,
+	_: int,
 ) -> (
 	Stream,
 	Error,

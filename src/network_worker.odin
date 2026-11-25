@@ -54,6 +54,9 @@ start_network :: proc() -> bool {
 		return false
 	}
 	if load_auth() {use_current_account()}
+	load_sponsor_settings()
+	load_preview_settings()
+	load_auto_quality_max()
 	thread.start(network_thread)
 	success = true
 	return true
@@ -234,9 +237,11 @@ network_main :: proc(_: ^thread.Thread) {
 					visitor_data,
 				)
 			}
-			delete(visitor_data)
-			visitor_data = visitor
-			set_image_visitor(visitor_data)
+			if visitor != "" {
+				delete(visitor_data)
+				visitor_data = visitor
+				set_image_visitor(visitor_data)
+			}
 			for &video, i in catalog.videos {video.cover_index = i}
 			if !post_network_result(
 				{
@@ -296,9 +301,10 @@ network_main :: proc(_: ^thread.Thread) {
 				pending_auth_active = false
 				if !post_network_result({kind = .Login_Error, login_message = message}) {return}
 			}
-		case .Resolve:
+		case .Resolve, .Preview:
+			preview := request.kind == .Preview
 			// Bootstrap the same visitor context as normal browsing, without UI navigation.
-			if visitor_data == "" {
+			if visitor_data == "" && !preview {
 				lookup, _, visitor := yt.search(&network_client, request.text)
 				model.catalog_destroy(&lookup)
 				visitor_data = visitor
@@ -310,18 +316,24 @@ network_main :: proc(_: ^thread.Thread) {
 				visitor_data,
 				network_stopping,
 				limits = playback_limits[:],
+				requested_height = request.quality_height,
+				preview = preview,
+				maximum_height = request.quality_auto_max,
 			)
 			// Deliver the skip plan with the sources, before any media read-ahead.
 			segments: [dynamic]sb.Segment
-			if error == .None &&
-			   !network_stopping() {segments = sb.fetch(&network_client, request.text)}
+			if error == .None && !preview && !request.quality_change && !network_stopping() {
+				segments = sb.fetch(&network_client, request.text, request.sponsor_categories)
+			}
 			if !post_network_result(
 				{
-					kind = .Stream,
+					kind = preview ? .Preview : .Stream,
 					page = request.page,
 					playback = request.playback,
 					position_ms = request.position_ms,
 					start_paused = request.start_paused,
+					quality_height = request.quality_height,
+					quality_change = request.quality_change,
 					error = error,
 					stream = stream,
 					segments = segments,

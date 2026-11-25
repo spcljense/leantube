@@ -67,6 +67,7 @@ display_ready: i32
 pending_video_data: cstring
 display_width, display_height: c.int
 destination_width, destination_height: c.int = 1920, 1080
+destination: sdl.Rect
 
 display_event :: proc "c" (id, task, event, app_state, play_state: c.long, reply: cstring) {
 	context = runtime.default_context()
@@ -111,11 +112,26 @@ attach_display :: proc(
 	app_id: cstring,
 	media_id, video_data: string,
 	width, height: c.int,
+	viewport: Maybe(sdl.Rect) = nil,
 ) -> bool {
 	update_display(video_data)
 	display_width, display_height = width, height
 	if bounds: sdl.Rect; sdl.GetDisplayBounds(0, &bounds) == 0 {
 		destination_width, destination_height = bounds.w, bounds.h
+	}
+	destination = {0, 0, destination_width, destination_height}
+	preview, bounded := viewport.?
+	if bounded {
+		sx, sy := f32(destination_width) / view_width, f32(destination_height) / view_height
+		w, h := f32(preview.w) * sx, f32(preview.h) * sy
+		scale := min(w / f32(width), h / f32(height))
+		fitted_w, fitted_h := scale * f32(width), scale * f32(height)
+		destination = {
+			i32(f32(preview.x) * sx + (w - fitted_w) / 2),
+			i32(f32(preview.y) * sy + (h - fitted_h) / 2),
+			i32(fitted_w),
+			i32(fitted_h),
+		}
 	}
 	if load_acb() {
 		acb_id = acb.AcbAPI_create()
@@ -131,21 +147,26 @@ attach_display :: proc(
 		task: c.long
 		window := acb.AcbAPI_setDisplayWindow(
 			acb_id,
-			0,
-			0,
-			c.long(destination_width),
-			c.long(destination_height),
-			true,
+			c.long(destination.x),
+			c.long(destination.y),
+			c.long(destination.w),
+			c.long(destination.h),
+			!bounded,
 			&task,
 		)
 		fmt.eprintf("display bind=%v window=%d\n", bound, window)
-		return bound
+		return bound && (!bounded || window >= 0)
 	}
 	foreign_window = lt_export_window(window_display, window_surface)
 	if foreign_window {
 		fmt.eprintln("display: exported window ready")
+		if bounded {
+			// The media service imports this region during Load. Publish its bounds first.
+			return display_started() && wl_display_roundtrip(window_display) >= 0
+		}
 		return true
 	}
+	if bounded {return false}
 	// webOS 1.x has neither libAcbAPI nor wl_webos_foreign; Starfish drives the video plane directly.
 	legacy_plane = true
 	fmt.eprintln("display: using native Starfish video plane")
@@ -186,7 +207,14 @@ display_started :: proc() -> bool {
 		)
 	}
 	if foreign_window {
-		return lt_set_window(display_width, display_height, destination_width, destination_height)
+		return lt_set_window(
+			display_width,
+			display_height,
+			destination.x,
+			destination.y,
+			destination.w,
+			destination.h,
+		)
 	}
 	if acb_id < 0 {return false}
 	task: c.long

@@ -22,6 +22,8 @@ Stream :: struct {
 	url:         string,
 	width:       int,
 	height:      int,
+	heights:     [dynamic]int,
+	has_4k:      bool,
 	audio_url:   string,
 	channel_id:  string,
 	title:       string,
@@ -33,6 +35,7 @@ Stream :: struct {
 stream_destroy :: proc(stream: ^Stream) {
 	delete(stream.url); delete(stream.audio_url)
 	delete(stream.channel_id); delete(stream.title)
+	delete(stream.heights)
 	stream^ = {}
 }
 
@@ -136,6 +139,38 @@ watched_percent :: proc(overlays: json.Value) -> f32 {
 	return f32(clamp(percent, 0, 100))
 }
 
+has_4k_badge :: proc(value: json.Value) -> bool {
+	#partial switch item in value {
+	case json.Array:
+		for child in item {if has_4k_badge(child) {return true}}
+	case json.Object:
+		for key, child in item {
+			switch key {
+			case "metadataBadgeRenderer",
+			     "badgeViewModel",
+			     "thumbnailBadgeViewModel",
+			     "badgeRenderer":
+				for name in ([2]string{"label", "text"}) {
+					field_value := field(child, name)
+					if label, ok := field_value.(json.String); ok {
+						if strings.equal_fold(
+							strings.trim_space(string(label)),
+							"4K",
+						) {return true}
+					} else {
+						formatted := text(field_value)
+						defer delete(formatted)
+						if strings.equal_fold(strings.trim_space(formatted), "4K") {return true}
+					}
+				}
+			case:
+				if has_4k_badge(child) {return true}
+			}
+		}
+	}
+	return false
+}
+
 // Briefly opened videos report a small percentage, so treat those as unwatched.
 MIN_RESUME_PERCENT :: 10
 
@@ -215,6 +250,9 @@ collect_videos :: proc(value: json.Value, catalog: ^model.Catalog) {
 				title           = title,
 				duration_label  = stamp,
 				duration_ms     = ms,
+				has_4k          = has_4k_badge(
+					video["badges"],
+				) || has_4k_badge(video["thumbnailOverlays"]),
 			}
 			read_resume_position(&card, video["navigationEndpoint"])
 			view_text := text(video["viewCountText"])
@@ -240,12 +278,26 @@ collect_videos :: proc(value: json.Value, catalog: ^model.Catalog) {
 }
 
 // Continuations can include an empty initial contents object beside the new page.
-feed_contents :: proc(value: json.Value) -> json.Value {
-	if field(value, "error") != nil {return nil}
-	for key in ([5]string{"continuationContents", "contents", "onResponseReceivedActions", "onResponseReceivedEndpoints", "onResponseReceivedCommands"}) {
+feed_updates :: proc(value: json.Value) -> json.Value {
+	if continuation := field(value, "continuationContents"); continuation != nil {
+		return continuation
+	}
+	#partial switch contents in field(value, "contents") {
+	case json.Object:
+		if len(contents) > 0 {return nil}
+	case json.Array:
+		if len(contents) > 0 {return nil}
+	}
+	for key in ([3]string{"onResponseReceivedActions", "onResponseReceivedEndpoints", "onResponseReceivedCommands"}) {
 		if contents := field(value, key); contents != nil {return contents}
 	}
 	return nil
+}
+
+feed_contents :: proc(value: json.Value) -> json.Value {
+	if field(value, "error") != nil {return nil}
+	if contents := feed_updates(value); contents != nil {return contents}
+	return field(value, "contents")
 }
 
 // The caller owns visitor_data. Keep it on the network worker, not in UI metadata.
@@ -260,7 +312,7 @@ parse_search :: proc(
 	if err != .None {return {}, .Invalid_Response, ""}
 	defer json.destroy_value(value)
 	primary := feed_contents(value)
-	if field(value, "continuationContents") == nil && field(value, "contents") != nil {
+	if feed_updates(value) == nil && field(value, "contents") != nil {
 		primary = field(field(primary, "twoColumnSearchResultsRenderer"), "primaryContents")
 	}
 	if primary == nil {return {}, .Invalid_Response, ""}
@@ -338,6 +390,8 @@ collect_lockups :: proc(value: json.Value, catalog: ^model.Catalog) {
 				title           = strings.clone(string(title_text)),
 				duration_label  = stamp,
 				duration_ms     = ms,
+				has_4k          = !playlist && (has_4k_badge(lockup_metadata) ||
+						has_4k_badge(field(thumbnail, "overlays"))),
 			}
 			if !playlist {
 				read_resume_position(
@@ -369,7 +423,7 @@ parse_search_tv :: proc(
 	defer json.destroy_value(value)
 	contents := feed_contents(value)
 	if contents == nil ||
-	   (field(value, "continuationContents") == nil &&
+	   (feed_updates(value) == nil &&
 			   field(value, "contents") != nil &&
 			   field(contents, "sectionListRenderer") == nil) {
 		return {}, .Invalid_Response, ""
@@ -605,6 +659,9 @@ Player_Request :: #type proc(
 	profile: Profile,
 	visitor_data: string,
 	limits: []Video_Limit,
+	requested_height: int,
+	preview: bool,
+	maximum_height: int,
 ) -> (
 	Stream,
 	Error,
@@ -617,6 +674,9 @@ resolve :: proc(
 	stop_when: proc() -> bool = nil,
 	request: Player_Request = player_request,
 	limits: []Video_Limit = nil,
+	requested_height: int = 0,
+	preview: bool = false,
+	maximum_height: int = 0,
 ) -> (
 	Stream,
 	Error,
@@ -624,11 +684,20 @@ resolve :: proc(
 	if !video_id_valid(id) {return {}, .Invalid_Response}
 	if stop_when != nil && stop_when() {return {}, .Unavailable}
 	if visitor_data != "" {
-		stream, error := request(client, id, .VisionOS, visitor_data, limits)
+		stream, error := request(
+			client,
+			id,
+			.VisionOS,
+			visitor_data,
+			limits,
+			requested_height,
+			preview,
+			maximum_height,
+		)
 		if error == .None {return stream, error}
 		if stop_when != nil && stop_when() {return {}, .Unavailable}
 	}
-	return request(client, id, .Android, "", limits)
+	return request(client, id, .Android, "", limits, requested_height, preview, maximum_height)
 }
 
 player_request :: proc(
@@ -637,6 +706,9 @@ player_request :: proc(
 	profile: Profile,
 	visitor_data: string = "",
 	limits: []Video_Limit = nil,
+	requested_height: int = 0,
+	preview: bool = false,
+	maximum_height: int = 0,
 ) -> (
 	Stream,
 	Error,
@@ -684,7 +756,13 @@ player_request :: proc(
 	response, error := api_post(client, "player", body, profile)
 	if error != .None {return {}, error}
 	defer delete(response.body)
-	stream, parse_error := parse_player(string(response.body[:]), limits)
+	stream, parse_error := parse_player(
+		string(response.body[:]),
+		limits,
+		requested_height,
+		preview,
+		maximum_height,
+	)
 	if parse_error == .None {
 		stream.client = profile == .VisionOS ? "visionos" : "android"
 	}

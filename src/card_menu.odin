@@ -29,6 +29,8 @@ can_press_card :: proc() -> bool {
 		!channel_focus &&
 		!search_editing &&
 		!account_menu &&
+		!sponsor_menu &&
+		!settings_menu &&
 		!login_screen &&
 		!card_menu &&
 		!card_menu_waiting &&

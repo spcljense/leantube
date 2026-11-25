@@ -7,7 +7,9 @@ window_display, window_surface: rawptr
 
 lt_export_window :: proc(_: rawptr, _: rawptr) -> bool {return false}
 lt_window_id :: proc() -> cstring {return nil}
-lt_set_window :: proc(_: c.int, _: c.int, _: c.int, _: c.int) -> bool {return false}
+lt_set_window :: proc(_: c.int, _: c.int, _: c.int, _: c.int, _: c.int, _: c.int) -> bool {return false}
+wl_display_roundtrip :: proc(_: rawptr) -> c.int {return -1}
+view_width, view_height: f32 = 1920, 1080
 lt_unexport_window :: proc() {}
 LSMessageGetPayload :: proc(_: rawptr) -> cstring {return nil}
 bus_call :: proc(

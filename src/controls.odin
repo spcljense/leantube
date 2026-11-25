@@ -57,6 +57,8 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 	}
 	if !browsing {show_player_controls()}
 	if browsing {
+		if sponsor_menu {sponsor_menu_pointer(activate); return}
+		if settings_menu {settings_pointer(activate); return}
 		if card_press.active &&
 		   card_press.pointer &&
 		   !clay.PointerOver(clay.ID("video", u32(card_press.index))) {
@@ -139,7 +141,10 @@ controls_pointer :: proc(renderer: ^sdl.Renderer, x, y: f32, down, activate: boo
 		}
 		return
 	}
+	if autoplay_deadline != 0 {autoplay_pointer(activate); return}
+	if quality_menu {quality_menu_pointer(activate); return}
 	if activate {
+		if clay.PointerOver(clay.ID("player-quality")) {open_quality_menu(); return}
 		if clay.PointerOver(clay.ID("player-channel")) {open_player_channel(); return}
 		if duration_ms > 0 && timeline_hovered() {
 			box := clay.GetElementData(clay.ID("timeline")).boundingBox
@@ -257,21 +262,21 @@ timeline_bar :: proc() {
 				if end >
 				   start {timeline_span(clay.ID("timeline-buffered"), start, end, height, COLOR_BUFFERED, 1)}
 				for segment, i in sponsor_segments {
-					if sb.can_skip(segment, duration_ms) {
+					if sb.valid_span(segment, duration_ms) {
 						timeline_span(
 							clay.ID("sponsor-marker", u32(i)),
 							segment.start_ms,
 							segment.end_ms,
 							height,
-							COLOR_SPONSOR,
-							2,
+							SPONSOR_COLORS[segment.category],
+							3,
 							rounded = false,
 						)
 					}
 				}
 				position := clamp(shown_position(), 0, duration_ms)
-				// Progress stays above markers, including when paused inside a segment.
-				timeline_span(clay.ID("timeline-progress"), 0, position, height, COLOR_ACCENT, 3)
+				// Keep already-skipped segments visible over the played portion.
+				timeline_span(clay.ID("timeline-progress"), 0, position, height, COLOR_ACCENT, 2)
 				// The spacer ends at the position. Shift the row left by half a
 				// knob, so the knob centre marks the position.
 				if clay.UI()(
@@ -321,7 +326,10 @@ digits_label :: proc(text: string, color: clay.Color = COLOR_TEXT) {
 	) {label(text, .Body, color)}
 }
 
-player_layout :: proc(elapsed, total, speed, quality: string) {
+PLAYER_HEADER_INSET :: 48
+PLAYER_HEADER_GAP :: 24
+
+player_layout :: proc(elapsed, total, speed, quality, title: string) {
 	if clay.UI(clay.ID("root"))(
 	{
 		layout = {
@@ -335,17 +343,25 @@ player_layout :: proc(elapsed, total, speed, quality: string) {
 		{
 			layout = {
 				sizing = {width = clay.SizingGrow({}), height = clay.SizingFit({})},
-				padding = padding(48, 48, 32, 32),
-				childGap = spacing(24),
+				padding = padding(PLAYER_HEADER_INSET, PLAYER_HEADER_INSET, 32, 32),
+				childGap = spacing(PLAYER_HEADER_GAP),
 				childAlignment = {y = .Center},
 			},
 		},
 		) {
 			if clay.UI()(
-			{layout = {sizing = {width = clay.SizingGrow({})}}, clip = {horizontal = true}},
+			{
+				layout = {
+					sizing = {width = clay.SizingGrow({})},
+					childGap = spacing(UHD_BADGE_GAP),
+				},
+				clip = {horizontal = true},
+			},
 			) {
 				if selected >= 0 && selected < len(catalog.videos) {
-					label(catalog.videos[selected].title, .Player_Title, wrap = .Words)
+					video := catalog.videos[selected]
+					if video.has_4k {uhd_badge(clay.ID("player-title-4k"), .Player_Title)}
+					label(title, .Player_Title, wrap = .Newlines)
 				}
 			}
 			player_channel_button()
@@ -393,14 +409,21 @@ player_layout :: proc(elapsed, total, speed, quality: string) {
 				}
 			}
 			// Reserve the quality slot before the media service reports it.
-			if clay.UI()(
+			if clay.UI(clay.ID("player-quality"))(
 			{
 				layout = {
 					sizing = {width = clay.SizingFixed(scaled(64))},
 					childAlignment = {x = .Right, y = .Center},
 				},
 			},
-			) {if quality != "" {digits_label(quality, COLOR_MUTED)}}
+			) {
+				if quality != "" {
+					hovered :=
+						len(player_quality_options) > 0 &&
+						clay.PointerOver(clay.ID("player-quality"))
+					digits_label(quality, hovered ? COLOR_TEXT : COLOR_MUTED)
+				}
+			}
 		}
 	}
 }
@@ -415,6 +438,8 @@ show_player_controls :: proc() {controls_until = sdl.GetTicks64() + PLAYER_CONTR
 player_controls_visible :: proc() -> bool {
 	return(
 		paused ||
+		quality_menu ||
+		autoplay_deadline != 0 ||
 		!loaded ||
 		sdl.GetTicks64() < controls_until ||
 		clay.PointerOver(clay.ID("controls")) ||

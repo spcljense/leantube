@@ -91,7 +91,11 @@ decoder_feed :: proc(_: ^Starfish, t: ^reader.Track, limit: f64) -> bool {
 }
 resolved_position: f64
 resolved_calls: int
-resolve_selected :: proc(position_ms: f64 = 0, _: bool = false) {
+player_quality_height: int
+clear_player_quality :: proc() {}
+autoplay_deadline: u64
+offer_next_video :: proc() {return_to_grid = true}
+resolve_selected :: proc(position_ms: f64 = 0, _: bool = false, _: int = 0) {
 	resolved_position = position_ms
 	resolved_calls += 1
 }
@@ -104,7 +108,7 @@ opening_a_card_starts_at_its_resume_position :: proc(t: ^testing.T) {
 	for fixture in ([]struct {
 			card:     model.Video,
 			expected: f64,
-		}{{model.Video{duration_ms = 600000, resume_ms = 123500}, 123500}, {model.Video{duration_ms = 600000}, 0}, {model.Video{duration_ms = 600000, resume_ms = 600000}, 0}, {model.Video{duration_ms = 600000, resume_ms = 700000}, 0}, {model.Video{resume_ms = 123500}, 123500}, {model.Video{resume_ms = -1}, 0}}) {
+		}{{model.Video{duration_ms = 600000, resume_ms = 123500}, 113500}, {model.Video{duration_ms = 600000}, 0}, {model.Video{duration_ms = 600000, resume_ms = 9500}, 0}, {model.Video{duration_ms = 600000, resume_ms = 600000}, 0}, {model.Video{duration_ms = 600000, resume_ms = 700000}, 0}, {model.Video{resume_ms = 123500}, 113500}, {model.Video{resume_ms = -1}, 0}}) {
 		catalog.videos[0] = fixture.card
 		resolved_position = -1
 		start_video()
@@ -207,12 +211,15 @@ history_reports_presented_positions_and_does_not_record_paused_seeks :: proc(t: 
 	testing.expect(
 		t,
 		len(fake_history_positions) == 1,
-		"continuous playback must not queue more reports",
+		"continuous playback must respect the reporting interval",
 	)
-	_ = player_pause(true)
+	player_history.report_due = sdl.GetTicks64()
+	sync.atomic_store(&fake_status.frame_ns, 3_000_000_000)
+	poll_player()
 	testing.expect_value(t, len(fake_history_positions), 2)
-	testing.expect_value(t, fake_history_positions[1], f64(2.5))
-	_ = player_seek(3000)
+	testing.expect_value(t, fake_history_positions[1], f64(3))
+	_ = player_pause(true)
+	_ = player_seek(4000)
 	stop_playback()
 	testing.expect(
 		t,
@@ -220,8 +227,8 @@ history_reports_presented_positions_and_does_not_record_paused_seeks :: proc(t: 
 		"a paused seek must not report an unwatched position",
 	)
 	testing.expect_value(t, catalog.videos[0].watched_percent, f32(0))
-	testing.expect_value(t, catalog.videos[1].watched_percent, f32(25))
-	testing.expect_value(t, catalog.videos[1].resume_ms, f64(2500))
+	testing.expect_value(t, catalog.videos[1].watched_percent, f32(30))
+	testing.expect_value(t, catalog.videos[1].resume_ms, f64(3000))
 }
 
 @(test)

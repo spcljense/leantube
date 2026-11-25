@@ -22,6 +22,8 @@ player_pause :: proc(value: bool) -> bool {paused = value; return true}
 player_rate_supported :: proc() -> bool {return true}
 player_rate :: proc(_: f64) -> bool {return true}
 player_seek :: proc(_: f64) -> bool {return true}
+stop_feed_preview :: proc() {}
+apply_feed_preview :: proc(_: ^Network_Result) {}
 
 load_video :: proc(
 	stream: yt.Stream,
@@ -29,10 +31,13 @@ load_video :: proc(
 	position_ms: f64 = 0,
 	start_paused: bool = false,
 ) {
-	start_video()
+	browsing, loaded = false, true
+	duration_ms = catalog.videos[selected].duration_ms
 	if stream.duration_ms > 0 {duration_ms = stream.duration_ms}
-	timeline.position_ms = position_ms
+	timeline = {position_ms = position_ms, seek_target_ms = -1}
 	paused = start_paused
+	rate = 1
+	dirty = true
 }
 
 start_video :: proc() {
@@ -54,6 +59,8 @@ start_video :: proc() {
 stop_playback :: proc() {
 	browsing = true
 	resolving = false
+	clear_player_quality()
+	autoplay_deadline = 0
 	delete(sponsor_segments); sponsor_segments = nil
 	return_to_grid = false
 	seek_pending = {}
@@ -77,6 +84,7 @@ run_dev :: proc(renderer: ^sdl.Renderer) {
 			loading_active() ? 16 : 100,
 		) {wheel = handle_event(renderer, event)}
 		if return_to_grid {stop_playback()}
+		tick_autoplay(sdl.GetTicks64())
 		poll_network(renderer)
 		poll_card_press(sdl.GetTicks64())
 		poll_login_tick()
@@ -103,3 +111,5 @@ run_dev :: proc(renderer: ^sdl.Renderer) {
 		}
 	}
 }
+
+finish_video :: proc() {offer_next_video()}

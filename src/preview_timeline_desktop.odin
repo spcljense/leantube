@@ -27,12 +27,10 @@ check_timeline_pixel :: proc(
 		),
 	)
 	// Translucent segments blend with the fade and lower track layers.
-	// A sponsor marker sits over the gray track or buffer, not the progress.
 	alpha := f32(TIMELINE_ALPHA) / 255
-	background_max := expected == COLOR_SPONSOR ? COLOR_BUFFERED[0] : 255
 	for value, i in ([3]u8{red, green, blue}) {
 		low := expected[i] * alpha
-		high := low + background_max * (1 - alpha)
+		high := low + 255 * (1 - alpha)
 		assert(
 			f32(value) >= math.floor(low) - 1 && f32(value) <= math.ceil(high) + 1,
 			"timeline marker or progress color is incorrect",
@@ -51,8 +49,8 @@ check_sponsor_timeline :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		&sponsor_segments,
 		..[]sb.Segment {
 			{start_ms = 10000, end_ms = 20000},
-			{start_ms = 40000, end_ms = 60000},
-			{start_ms = 70000, end_ms = 80000, skipped = true},
+			{start_ms = 40000, end_ms = 60000, category = .Intro},
+			{start_ms = 70000, end_ms = 80000, category = .Outro, skipped = true},
 			{start_ms = 82000, end_ms = 90000, video_duration_ms = 120000},
 			{start_ms = 96000, end_ms = 102000},
 		},
@@ -66,11 +64,12 @@ check_sponsor_timeline :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	for c in ([]struct {
 			fraction: f32,
 			color:    clay.Color,
-		}{{0.05, COLOR_ACCENT}, {0.125, COLOR_ACCENT}, {0.175, COLOR_SPONSOR}, {0.205, COLOR_TRACK}, {0.395, COLOR_TRACK}, {0.405, COLOR_SPONSOR}, {0.595, COLOR_SPONSOR}, {0.605, COLOR_TRACK}, {0.75, COLOR_TRACK}, {0.85, COLOR_TRACK}, {0.99, COLOR_TRACK}}) {check_timeline_pixel(surface, c.fraction, c.color)}
+		}{{0.05, COLOR_ACCENT}, {0.125, SPONSOR_COLORS[.Sponsor]}, {0.175, SPONSOR_COLORS[.Sponsor]}, {0.205, COLOR_TRACK}, {0.395, COLOR_TRACK}, {0.405, SPONSOR_COLORS[.Intro]}, {0.595, SPONSOR_COLORS[.Intro]}, {0.605, COLOR_TRACK}, {0.75, SPONSOR_COLORS[.Outro]}, {0.85, COLOR_TRACK}, {0.99, COLOR_TRACK}}) {check_timeline_pixel(surface, c.fraction, c.color)}
 	sb.mark_skipped(sponsor_segments[:], 10000, 20000)
+	timeline.position_ms = 25000
 	snapshot(renderer, surface, "player-sponsor-skipped")
-	check_timeline_pixel(surface, 0.175, COLOR_TRACK)
-	check_timeline_pixel(surface, 0.5, COLOR_SPONSOR)
+	check_timeline_pixel(surface, 0.175, SPONSOR_COLORS[.Sponsor])
+	check_timeline_pixel(surface, 0.5, SPONSOR_COLORS[.Intro])
 	duration_ms = 0
 	snapshot(renderer, surface, "player-sponsor-unknown-duration")
 	check_timeline_pixel(surface, 0.125, COLOR_TRACK)
@@ -103,7 +102,7 @@ check_buffered_timeline :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) 
 	assert(idle_knob.width == scaled(TIMELINE_KNOB))
 	check_timeline_pixel(surface, 0.05, COLOR_ACCENT)
 	check_timeline_pixel(surface, 0.15, COLOR_BUFFERED)
-	check_timeline_pixel(surface, 0.225, COLOR_SPONSOR)
+	check_timeline_pixel(surface, 0.225, SPONSOR_COLORS[.Sponsor])
 	check_timeline_pixel(surface, 0.275, COLOR_BUFFERED)
 	check_timeline_pixel(surface, 0.35, COLOR_TRACK)
 	buffer := clay.GetElementData(clay.ID("timeline-buffered")).boundingBox
@@ -130,14 +129,14 @@ check_buffered_timeline :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) 
 		clay.GetElementData(clay.ID("sponsor-marker", 0)).boundingBox.height == hover_track.height,
 	)
 	check_timeline_pixel(surface, 0.15, COLOR_BUFFERED)
-	check_timeline_pixel(surface, 0.225, COLOR_SPONSOR)
+	check_timeline_pixel(surface, 0.225, SPONSOR_COLORS[.Sponsor])
 	// Both ends must fill their top corners, not form rounded caps.
 	marker := clay.GetElementData(clay.ID("sponsor-marker", 0)).boundingBox
 	for edge_x in ([2]f32{math.ceil(marker.x), math.floor(marker.x + marker.width) - 2}) {
 		check_timeline_pixel(
 			surface,
 			(edge_x + 0.5 - hover_track.x) / hover_track.width,
-			COLOR_SPONSOR,
+			SPONSOR_COLORS[.Sponsor],
 			(math.ceil(marker.y) + 0.5 - hover_track.y) / hover_track.height,
 		)
 	}

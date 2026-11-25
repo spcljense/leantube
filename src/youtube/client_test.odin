@@ -123,9 +123,8 @@ player_selects_the_best_direct_combined_h264_stream :: proc(t: ^testing.T) {
 		{"width":3840,"height":2160,"fps":30,"mimeType":"video/mp4; codecs=\"avc1, mp4a.40.2\"","url":"http://media.example/insecure"}
 	]}}`,
 	)
-	defer delete(stream.url)
+	defer stream_destroy(&stream)
 	testing.expect_value(t, error, .None)
-	defer delete(stream.audio_url)
 	testing.expect_value(t, stream.width, 1280)
 	testing.expect_value(t, stream.height, 720)
 	testing.expect_value(t, stream.url, "https://media.example/high")
@@ -137,6 +136,6 @@ player_never_treats_sabr_or_login_responses_as_a_playable_url :: proc(t: ^testin
 		stream, error := parse_player(data)
 		testing.expect(t, error != .None)
 		testing.expect_value(t, stream.url, "")
-		delete(stream.url)
+		stream_destroy(&stream)
 	}
 }

@@ -4,6 +4,7 @@ package main
 import "core:c"
 import "core:testing"
 import "core:thread"
+import sdl "vendor:sdl2"
 
 foreign import fixture "system:AcbAPI"
 foreign fixture {
@@ -31,4 +32,6 @@ display_applies_latest_metadata_on_main_thread :: proc(t: ^testing.T) {
 	testing.expect_value(t, metadata_calls, 1)
 	release_display(); release_display()
 	testing.expect_value(t, destroy_calls, 1)
+	testing.expect(t, attach_display("test.app", "media-id", "preview", 640, 360, sdl.Rect{100, 50, 240, 160}))
+	testing.expect_value(t, destination, sdl.Rect{100, 62, 240, 135})
 }

@@ -17,10 +17,11 @@ Image_Request :: struct {
 }
 
 Network_Request :: struct {
-	kind:           enum {
+	kind:               enum {
 		Search,
 		Browse,
 		Resolve,
+		Preview,
 		Use_Account,
 		Account_Avatar,
 		Login_Start,
@@ -29,18 +30,22 @@ Network_Request :: struct {
 		Card_Membership,
 		Watch_History,
 	},
-	page, playback: u32,
-	position_ms:    f64,
-	history_start:  f64,
-	finished:       bool,
-	start_paused:   bool,
-	text:           string,
-	continuation:   string,
-	params, filter: string,
-	index:          int,
-	account:        u32,
-	auth_token:     Auth_Token,
-	action:         model.Card_Action,
+	page, playback:     u32,
+	position_ms:        f64,
+	history_start:      f64,
+	finished:           bool,
+	start_paused:       bool,
+	sponsor_categories: sb.Categories,
+	quality_height:     int,
+	quality_auto_max:   int,
+	quality_change:     bool,
+	text:               string,
+	continuation:       string,
+	params, filter:     string,
+	index:              int,
+	account:            u32,
+	auth_token:         Auth_Token,
+	action:             model.Card_Action,
 }
 Network_Result :: struct {
 	kind:           enum {
@@ -48,6 +53,7 @@ Network_Result :: struct {
 		Cover,
 		Channel_Avatar,
 		Stream,
+		Preview,
 		Account,
 		Account_Avatar,
 		Login_Code,
@@ -60,6 +66,8 @@ Network_Result :: struct {
 	page, playback: u32,
 	position_ms:    f64,
 	start_paused:   bool,
+	quality_height: int,
+	quality_change: bool,
 	index:          int,
 	append:         bool,
 	error:          yt.Error,
@@ -155,8 +163,13 @@ queue_watch_history :: proc(
 	)
 }
 
-resolve_selected :: proc(position_ms: f64 = 0, start_paused: bool = false) {
+resolve_selected :: proc(
+	position_ms: f64 = 0,
+	start_paused: bool = false,
+	quality_height: int = 0,
+) {
 	if selected < 0 || selected >= len(catalog.videos) {return}
+	stop_feed_preview()
 	clear_player_channel()
 	playback += 1
 	playback_requested_at = sdl.GetTicks64()
@@ -180,6 +193,9 @@ resolve_selected :: proc(position_ms: f64 = 0, start_paused: bool = false) {
 			playback = playback,
 			position_ms = position_ms,
 			start_paused = start_paused,
+			sponsor_categories = sponsor_categories,
+			quality_height = quality_height,
+			quality_auto_max = auto_quality_max,
 			text = strings.clone(catalog.videos[selected].id),
 		},
 	) {
@@ -188,15 +204,25 @@ resolve_selected :: proc(position_ms: f64 = 0, start_paused: bool = false) {
 }
 
 apply_stream :: proc(renderer: ^sdl.Renderer, result: ^Network_Result) {
-	if browsing || return_to_grid || !resolving || result.playback != playback {return}
+	if browsing || return_to_grid || result.playback != playback {return}
+	if result.quality_change {
+		apply_quality_change(renderer, result)
+		return
+	}
+	if !resolving {return}
 	resolving = false
 	if result.error != .None {
 		browsing = true
-		show_notice(
-			result.error == .No_Direct_Stream ? "YouTube did not provide a supported direct stream" : "Could not load video",
-		)
+		message := "Could not load video"
+		if result.error == .No_Direct_Stream {
+			message = "YouTube did not provide a supported direct stream"
+			if result.quality_height == 0 && auto_quality_max > 0 {
+				message = "No supported stream within the Auto resolution limit"
+			}
+		}
+		show_notice(message)
 	} else {
-		stream_width, stream_height = result.stream.width, result.stream.height
+		apply_stream_quality(result)
 		delete(sponsor_segments)
 		sponsor_segments = result.segments
 		result.segments = nil
@@ -263,6 +289,8 @@ poll_network :: proc(renderer: ^sdl.Renderer) {
 				apply_image(renderer, &result)
 			case .Stream:
 				apply_stream(renderer, &result)
+			case .Preview:
+				apply_feed_preview(&result)
 			}
 		}
 	}

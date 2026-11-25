@@ -10,7 +10,7 @@ foreign bridge {
 	tv_clay_abi :: proc(command_size, config_size, error_size: u32) -> bool ---
 	lt_export_window :: proc(display, surface: rawptr) -> bool ---
 	lt_window_id :: proc() -> cstring ---
-	lt_set_window :: proc(source_width, source_height, destination_width, destination_height: c.int) -> bool ---
+	lt_set_window :: proc(source_width, source_height, x, y, destination_width, destination_height: c.int) -> bool ---
 	lt_unexport_window :: proc() ---
 }
 @(link_prefix = "lt_")

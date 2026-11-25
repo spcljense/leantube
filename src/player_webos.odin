@@ -75,12 +75,14 @@ player_transition: Player_Transition
 // A signed media URL can stop working mid-stream, for example after an address
 // change or a CDN rejection. Re-resolve at the current position before giving up.
 PLAYER_RECOVERIES :: 2
+WATCH_HISTORY_INTERVAL_MS :: 10_000
 player_recoveries: int
 player_recovery_at: u64
 
 Player_History :: struct {
 	id:                                 string,
 	account, playback:                  u32,
+	report_due:                         u64,
 	start, position, reported_position: f64,
 }
 player_history: Player_History
@@ -101,6 +103,7 @@ report_player_history :: proc(finished: bool = false) {
 			}
 		}
 	}
+	h.report_due = sdl.GetTicks64() + WATCH_HISTORY_INTERVAL_MS
 	if queue_watch_history(h.id, h.start, h.position, h.account, h.playback, finished) {
 		h.reported_position, h.start = h.position, h.position
 	}
@@ -126,11 +129,12 @@ recover_playback :: proc(stage: string) -> bool {
 	   (player_recovery_at > 0 && now - player_recovery_at < 30_000) {return false}
 	position_ms := player_clock * 1000
 	paused_now := paused
+	quality_height := player_quality_height
 	player_recovery_at = now
 	player_recoveries += 1
 	fmt.eprintf("player recovery stage=%s position_s=%.3f\n", stage, player_clock)
 	stop_playback(true)
-	resolve_selected(position_ms, paused_now)
+	resolve_selected(position_ms, paused_now, quality_height)
 	return true
 }
 
@@ -221,6 +225,8 @@ stop_playback :: proc(from_recovery := false) {
 	player_pending_seek = -1
 	seek_pending = {}
 	loaded, paused, resolving = false, false, false
+	clear_player_quality()
+	autoplay_deadline = 0
 	delete(sponsor_segments); sponsor_segments = nil
 	timeline = {
 		seek_target_ms = -1,
@@ -341,7 +347,7 @@ finish_sponsor_span :: proc() {
 }
 
 poll_player :: proc() {
-	if player_reader == nil || return_to_grid {return}
+	if player_reader == nil || return_to_grid || autoplay_deadline != 0 {return}
 	s := player_reader
 	if sync.atomic_load(&s.state.failure) != 0 {
 		if !recover_playback("reader") {player_failed("reader")}
@@ -362,11 +368,7 @@ poll_player :: proc() {
 	v, a := &s.tracks[0], &s.tracks[1]
 	sync.mutex_lock(&v.mutex); sync.mutex_lock(&a.mutex)
 	vb, ab := reader.ahead(v, player_clock), reader.ahead(a, player_clock)
-	ready :=
-		(vb >= reader.STARTUP_SECONDS || v.eof) &&
-		(ab >= reader.STARTUP_SECONDS || a.eof) &&
-		reader.current_packet(v) &&
-		reader.current_packet(a)
+	ready := reader.startup_buffered(v, vb) && reader.startup_buffered(a, ab)
 	starved := (!reader.span_closed(v) && vb < 0.05) || (!reader.span_closed(a) && ab < 0.05)
 	no_tail := v.eof && a.eof && (!reader.current_packet(v) || !reader.current_packet(a))
 	missing_head := !reader.current_packet(v) || !reader.current_packet(a)
@@ -465,7 +467,9 @@ poll_player :: proc() {
 				player_progress_at = now
 				if !paused && !player_buffering {
 					player_history.position = next
-					if player_history.reported_position < 0 {report_player_history()}
+					if player_history.id != "" && now >= player_history.report_due {
+						report_player_history()
+					}
 				}
 			}
 			player_clock = next
@@ -490,9 +494,17 @@ poll_player :: proc() {
 	if sync.atomic_load(&status.ended) != 0 {
 		if s.state.skip_end > 0 {
 			if !paused {finish_sponsor_span()}
-		} else {report_player_history(true); return_to_grid = true}
+		} else {finish_video()}
 		return
 	}
 	if paused {player_progress_at = now}
 	if now - player_progress_at > 45000 {player_failed("progress")}
+}
+
+finish_video :: proc() {
+	if autoplay_deadline != 0 || return_to_grid {return}
+	report_player_history(true)
+	seek_pending = {}
+	_ = player_pause(true)
+	offer_next_video()
 }

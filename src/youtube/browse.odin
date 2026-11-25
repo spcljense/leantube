@@ -95,6 +95,14 @@ collect_tiles :: proc(value: json.Value, catalog: ^model.Catalog, videos_only: b
 			append(&catalog.videos, card)
 			return
 		}
+		if videos_only {
+			if lockup := item["lockupViewModel"]; lockup != nil {
+				kind, _ := field(lockup, "contentType").(json.String)
+				if kind == "LOCKUP_CONTENT_TYPE_VIDEO" {collect_lockups(value, catalog)}
+				return
+			}
+			if item["videoRenderer"] != nil {collect_videos(value, catalog); return}
+		}
 		for _, child in item {collect_tiles(child, catalog, videos_only)}
 	}
 }
@@ -128,6 +136,9 @@ parse_tile :: proc(tile: json.Value, videos_only: bool) -> (card: model.Video) {
 		title           = title,
 		duration_label  = stamp,
 		duration_ms     = ms,
+		has_4k          = !playlist && (has_4k_badge(metadata) ||
+				has_4k_badge(field(header, "thumbnailOverlays")) ||
+				has_4k_badge(field(tile, "badges"))),
 	}
 	if !playlist {read_resume_position(&card, command)}
 	labels: [dynamic]string
@@ -158,42 +169,57 @@ parse_tile :: proc(tile: json.Value, videos_only: bool) -> (card: model.Video) {
 }
 
 browse_continuation :: proc(value: json.Value) -> string {
+	token, _ := next_browse_cursor(value)
+	return strings.clone(token)
+}
+
+// The feed cursor is usually outside the shelves. At the same level, a list's
+// trailing continuation wins over an earlier one.
+next_browse_cursor :: proc(value: json.Value, depth := 0) -> (token: string, level: int) {
+	level = max(int)
 	#partial switch item in value {
 	case json.Array:
 		for child in item {
-			if token := browse_continuation(child); token != "" {return token}
+			candidate, candidate_level := next_browse_cursor(child, depth + 1)
+			if candidate != "" &&
+			   candidate_level <= level {token, level = candidate, candidate_level}
 		}
 	case json.Object:
 		if item["adSlotRenderer"] != nil ||
+		   item["inFeedAdLayoutRenderer"] != nil ||
 		   item["tileRenderer"] != nil ||
+		   item["videoRenderer"] != nil ||
 		   item["lockupViewModel"] != nil ||
 		   item["chipViewModel"] != nil ||
 		   item["listItemViewModel"] != nil ||
-		   item["menuRenderer"] != nil {return ""}
+		   item["menuRenderer"] != nil {return}
 		if node := item["continuationItemRenderer"]; node != nil {
-			token, _ := field(
-				field(field(node, "continuationEndpoint"), "continuationCommand"),
-				"token",
-			).(json.String)
-			return strings.clone(string(token))
+			command := find_node(field(node, "continuationEndpoint"), "continuationCommand")
+			if command == nil {command = find_node(field(node, "button"), "continuationCommand")}
+			if value, ok := field(command, "token").(json.String); ok && value != "" {
+				return string(value), depth
+			}
+			return
 		}
 		if tab := item["tabRenderer"]; tab != nil {
 			selected, _ := field(tab, "selected").(json.Boolean)
-			if bool(selected) {return browse_continuation(field(tab, "content"))}
-			return ""
+			if bool(selected) {return next_browse_cursor(field(tab, "content"), depth + 1)}
+			return
 		}
 		continuations, _ := item["continuations"].(json.Array)
 		for entry in continuations {
-			if token, ok := field(
+			if value, ok := field(
 				   field(entry, "nextContinuationData"),
 				   "continuation",
-			   ).(json.String); ok {
-				return strings.clone(string(token))
+			   ).(json.String); ok && value != "" {
+				return string(value), depth
 			}
 		}
 		for _, child in item {
-			if token := browse_continuation(child); token != "" {return token}
+			candidate, candidate_level := next_browse_cursor(child, depth + 1)
+			if candidate != "" &&
+			   candidate_level < level {token, level = candidate, candidate_level}
 		}
 	}
-	return ""
+	return
 }

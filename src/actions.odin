@@ -5,6 +5,10 @@ import "core:strings"
 import sdl "vendor:sdl2"
 
 key :: proc(code: sdl.Keycode, window: ^sdl.Window = nil, mods: sdl.Keymod = {}) {
+	if sponsor_menu {sponsor_menu_key(code); return}
+	if settings_menu {settings_key(code); return}
+	if autoplay_deadline != 0 {autoplay_key(code); return}
+	if quality_menu {quality_menu_key(code); return}
 	if card_menu {card_menu_key(code); return}
 	if account_menu {
 		add := len(auth_accounts) < MAX_ACCOUNTS
@@ -59,10 +63,12 @@ key :: proc(code: sdl.Keycode, window: ^sdl.Window = nil, mods: sdl.Keymod = {})
 		case sdl.Keycode.LEFT:
 			selected = model.grid_move(selected, len(catalog.videos), -1, 0, grid_columns)
 		case sdl.Keycode.RIGHT:
+			pagination_failed = false
 			selected = model.grid_move(selected, len(catalog.videos), 1, 0, grid_columns)
 		case sdl.Keycode.UP:
 			selected = model.grid_move(selected, len(catalog.videos), 0, -1, grid_columns)
 		case sdl.Keycode.DOWN:
+			pagination_failed = false
 			selected = model.grid_move(selected, len(catalog.videos), 0, 1, grid_columns)
 		}
 	} else {

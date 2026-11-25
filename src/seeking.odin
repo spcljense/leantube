@@ -54,6 +54,11 @@ skip_sponsor_at :: proc(from: f64, minimum_ms: f64 = 0) {
 	// Do not replay content that was presented after its end.
 	target = max(target, minimum_ms)
 	target = max(target, sb.skip_target(sponsor_segments[:], target, duration_ms))
+	if target >= duration_ms {
+		sb.mark_skipped(sponsor_segments[:], from, target)
+		finish_video()
+		return
+	}
 	if seek_to(target) {
 		fmt.printf("sponsor skip %.3f -> %.3f seconds\n", from / 1000, target / 1000)
 		sb.mark_skipped(sponsor_segments[:], from, target)

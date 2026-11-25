@@ -6,6 +6,69 @@ import "core:strings"
 import "core:testing"
 
 @(test)
+home_uses_the_page_tail_continuation_instead_of_the_shelf_cursor :: proc(t: ^testing.T) {
+	catalog, error, visitor := parse_browse(
+		`{"contents":{"sectionListRenderer":{"contents":[
+			{"shelfRenderer":{"content":{"gridRenderer":{
+				"continuations":[{"nextContinuationData":{"continuation":"shelf-only"}}]
+			}}}},
+			{"continuationItemRenderer":{"button":{"buttonRenderer":{
+				"command":{"continuationCommand":{"token":"home-next"}}
+			}}}}
+		]}}}`,
+		videos_only = true,
+	)
+	defer model.catalog_destroy(&catalog)
+	defer delete(visitor)
+	testing.expect_value(t, error, .None)
+	testing.expect_value(t, catalog.continuation, "home-next")
+}
+
+@(test)
+home_appends_new_video_renderers_and_continues_past_filtered_content :: proc(t: ^testing.T) {
+	catalog, error, visitor := parse_browse(
+		`{"contents":{},"onResponseReceivedActions":[{"appendContinuationItemsAction":{
+			"continuationItems":[
+				{"videoRenderer":{"videoId":"C5WDBA2i9nE","title":{"simpleText":"A recommendation"},"lengthText":{"simpleText":"3:00"}}},
+				{"lockupViewModel":{"contentId":"PLexample","contentType":"LOCKUP_CONTENT_TYPE_PLAYLIST"}},
+				{"continuationItemRenderer":{"continuationEndpoint":{
+					"continuationCommand":{"token":"more-home"}
+				}}}
+			]
+		}}]}`,
+		videos_only = true,
+	)
+	defer model.catalog_destroy(&catalog)
+	defer delete(visitor)
+	testing.expect_value(t, error, .None)
+	testing.expect_value(t, catalog.continuation, "more-home")
+	if testing.expect_value(t, len(catalog.videos), 1) {
+		testing.expect_value(t, catalog.videos[0].title, "A recommendation")
+	}
+}
+
+@(test)
+tv_feed_reads_4k_badges_without_guessing_from_titles :: proc(t: ^testing.T) {
+	catalog, error, visitor := parse_browse(
+		`{"contents":{"items":[
+		{"tileRenderer":{"onSelectCommand":{"watchEndpoint":{"videoId":"DN953UW8iJ8"}},
+			"header":{"tileHeaderRenderer":{"thumbnailOverlays":[{"thumbnailOverlayTimeStatusRenderer":{"text":{"simpleText":"1:00"}}}]}},
+			"metadata":{"tileMetadataRenderer":{"title":{"simpleText":"A video"},
+				"badges":[{"metadataBadgeRenderer":{"label":"4K"}}]}}}},
+		{"tileRenderer":{"onSelectCommand":{"watchEndpoint":{"videoId":"C5WDBA2i9nE"}},
+			"header":{"tileHeaderRenderer":{"thumbnailOverlays":[{"thumbnailOverlayTimeStatusRenderer":{"text":{"simpleText":"1:00"}}}]}},
+			"metadata":{"tileMetadataRenderer":{"title":{"simpleText":"What is 4K?"}}}}}
+	]}}`,
+	)
+	defer model.catalog_destroy(&catalog)
+	defer delete(visitor)
+	testing.expect_value(t, error, .None)
+	if !testing.expect_value(t, len(catalog.videos), 2) {return}
+	testing.expect(t, catalog.videos[0].has_4k)
+	testing.expect(t, !catalog.videos[1].has_4k)
+}
+
+@(test)
 home_reads_selected_videos_and_skips_ads_playlists_live_and_duplicates :: proc(t: ^testing.T) {
 	data := `{"contents":{"tvBrowseRenderer":{"content":{"tvSecondaryNavRenderer":{"tabs":[
 	{"tabRenderer":{"selected":false,"content":{"tileRenderer":{"onSelectCommand":{"watchEndpoint":{"videoId":"C5WDBA2i9nE"}},"header":{"tileHeaderRenderer":{"thumbnailOverlays":[{"thumbnailOverlayTimeStatusRenderer":{"text":{"simpleText":"1:00"}}}]}},"metadata":{"tileMetadataRenderer":{"title":{"simpleText":"not selected"}}}}}}},

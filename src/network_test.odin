@@ -200,6 +200,49 @@ full_queues_preserve_account_and_browse_order :: proc(t: ^testing.T) {
 }
 
 @(test)
+home_pagination_retries_on_navigation_and_stops_on_repeated_cursor :: proc(t: ^testing.T) {
+	network_requests, _ = chan.create(chan.Chan(Network_Request), 1, context.allocator)
+	old_browsing, old_rail_focus, old_selected := browsing, rail_focus, selected
+	old_notice, old_toast := notice, toast_until
+	old_focus_pending := library_focus_pending
+	defer {
+		stop_network()
+		clear_catalog()
+		delete(browse_id); browse_id = ""
+		search_loading, pagination_failed = false, false
+		browsing, rail_focus, selected = old_browsing, old_rail_focus, old_selected
+		notice, toast_until = old_notice, old_toast
+		library_focus_pending = old_focus_pending
+	}
+	browsing, rail_focus, selected = true, false, 0
+	browse_id = strings.clone("FEwhat_to_watch")
+	catalog.continuation = strings.clone("saved-home-cursor")
+	result := Network_Result {
+		kind   = .Catalog,
+		append = true,
+		error  = .Transport,
+	}
+	apply_catalog(&result)
+	load_more()
+	_, early := chan.try_recv(network_requests)
+	testing.expect(t, !early && pagination_failed)
+	key(.DOWN)
+	load_more()
+	request, ok := chan.try_recv(network_requests)
+	defer free_network_request(&request)
+	testing.expect(t, ok && request.kind == .Browse)
+	testing.expect_value(t, request.text, "FEwhat_to_watch")
+	testing.expect_value(t, request.continuation, "saved-home-cursor")
+	result.error = .None
+	result.catalog.continuation = strings.clone("saved-home-cursor")
+	apply_catalog(&result)
+	testing.expect_value(t, catalog.continuation, "")
+	load_more()
+	_, repeated := chan.try_recv(network_requests)
+	testing.expect(t, !repeated)
+}
+
+@(test)
 search_errors_empty_results_and_recovery_finish_loading :: proc(t: ^testing.T) {
 	network_results, _ = chan.create(chan.Chan(Network_Result), 2, context.allocator)
 	defer {

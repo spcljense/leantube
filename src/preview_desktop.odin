@@ -105,6 +105,7 @@ main :: proc() {
 					cover_index = i,
 					id = i == 0 ? strings.clone("DN953UW8iJ8") : "",
 					duration_ms = 100000,
+					has_4k = i == 0,
 					watched_percent = i == 0 ? 35 : i == 1 ? 100 : 0,
 					channel = i == 0 ? strings.clone("Theo - t3․gg") : fmt.aprintf("channel %02d", i + 1),
 					duration_label = model.time_label(100000),
@@ -148,6 +149,20 @@ main :: proc() {
 
 check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	snapshot(renderer, surface, "start")
+	assert(clay.GetElementData(clay.ID("card-4k", 0)).found)
+	assert(!clay.GetElementData(clay.ID("card-4k", 1)).found)
+	feed_preview_visible = true
+	assert(render(renderer))
+	preview_cover := clay.GetElementData(clay.ID("cover", 0)).boundingBox
+	preview_alpha: u8
+	assert(
+		read_surface_pixel(
+			surface, i32(preview_cover.x + 20), i32(preview_cover.y + 20),
+			nil, nil, nil, &preview_alpha,
+		) && preview_alpha == 0,
+	)
+	feed_preview_visible = false
+	assert(render(renderer))
 	// Keyboard input must clear the old mouse hover, not leave two cards lit.
 	hovered_card := clay.GetElementData(clay.ID("video", 0)).boundingBox
 	clay.SetPointerState(
@@ -519,8 +534,10 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	before_player := scroll.scrollPosition^[1]
 	key(sdl.Keycode.RETURN)
 	assert(!browsing && loaded && paused)
+	mark_video_4k(selected)
 	// The avatar arrives with the stream. Its slot must not move the title.
 	assert(render(renderer))
+	assert(clay.GetElementData(clay.ID("player-title-4k")).found)
 	header := clay.GetElementData(clay.ID("player-header")).boundingBox
 	player_channel_id = strings.clone("UC-example")
 	assert(render(renderer))
@@ -529,6 +546,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(player_channel_avatar != nil)
 	check_sponsor_timeline(renderer, surface)
 	check_buffered_timeline(renderer, surface)
+	check_quality_and_autoplay_ui(renderer)
 	// A pending seek must move the knob and the time before the decoder replies.
 	knob_before := clay.GetElementData(clay.ID("timeline-knob")).boundingBox
 	timeline.seek_target_ms = duration_ms / 2
@@ -539,7 +557,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	assert(timeline.position_ms == duration_ms / 2)
 	// The legacy overlay has no speed stepper and gives its space to the timeline.
 	clay.BeginLayout()
-	player_layout("1:23", "2:46", "", "4K")
+	player_layout("1:23", "2:46", "", "4K", "Video title")
 	_ = clay.EndLayout(0)
 	assert(!clay.GetElementData(clay.ID("rate")).found)
 	legacy_track := clay.GetElementData(clay.ID("timeline-track"))
@@ -611,6 +629,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	model.seek_done(&timeline)
 	key(sdl.Keycode.AC_BACK)
 	assert(return_to_grid)
+	catalog.videos[selected].has_4k = false
 	stop_playback()
 	assert(browsing && !return_to_grid)
 	snapshot(renderer, surface, "restored")
@@ -630,6 +649,7 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 	check_account_ui(renderer, surface)
 	check_search_flow(renderer, surface)
 	check_login_ui(renderer, surface)
+	check_sponsor_menu_ui(renderer)
 	// Check both optimized scans at the end of a large feed.
 	{
 		clear_catalog()
@@ -662,4 +682,131 @@ check_layout :: proc(renderer: ^sdl.Renderer, surface: ^sdl.Surface) {
 		release_image_texture(retained)
 	}
 	fmt.printf("%s: UI checks passed\n", os.args[1])
+}
+
+check_sponsor_menu_ui :: proc(renderer: ^sdl.Renderer) {
+	original_directory, original_categories := app_directory, sponsor_categories
+	original_focus, original_cursor := rail_focus, rail_cursor
+	directory, error := os.make_directory_temp("", "leantube-sponsor-*", context.allocator)
+	assert(error == nil)
+	defer {
+		app_directory, sponsor_categories = original_directory, original_categories
+		rail_focus, rail_cursor = original_focus, original_cursor
+		_ = os.remove_all(directory)
+		delete(directory)
+	}
+	app_directory = directory
+	load_sponsor_settings()
+	assert(sponsor_categories == {.Sponsor})
+	rail_focus, rail_cursor = true, .SponsorBlock
+	key(.RETURN)
+	assert(sponsor_menu)
+	key(.DOWN)
+	key(.RETURN)
+	assert(sponsor_categories == {.Sponsor, .Intro})
+	assert(render(renderer))
+	outro := clay.GetElementData(clay.ID("sponsor-category", 2))
+	assert(outro.found)
+	box := outro.boundingBox
+	controls_pointer(renderer, box.x + box.width / 2, box.y + box.height / 2, true, true)
+	assert(sponsor_categories == {.Sponsor, .Intro, .Outro})
+	key(.AC_BACK)
+	assert(!sponsor_menu)
+	sponsor_categories = {}
+	load_sponsor_settings()
+	assert(sponsor_categories == {.Sponsor, .Intro, .Outro})
+	assert(save_sponsor_settings({}))
+	load_sponsor_settings()
+	assert(sponsor_categories == {})
+	original_previews, original_audio := feed_previews, feed_preview_audio
+	original_limit := auto_quality_max
+	defer {
+		feed_previews, feed_preview_audio = original_previews, original_audio
+		auto_quality_max = original_limit
+	}
+	load_preview_settings()
+	load_auto_quality_max()
+	assert(feed_previews && feed_preview_audio)
+	assert(auto_quality_max == 0)
+	activate_navigation(.Settings)
+	assert(settings_menu && render(renderer))
+	key(.DOWN)
+	key(.RETURN)
+	assert(feed_previews && !feed_preview_audio)
+	load_preview_settings()
+	assert(feed_previews && !feed_preview_audio)
+	key(.DOWN)
+	key(.RETURN)
+	assert(settings_quality_menu && render(renderer))
+	for _ in 0 ..< 3 {key(.DOWN)}
+	key(.RETURN)
+	assert(settings_menu && !settings_quality_menu && auto_quality_max == 1080)
+	load_auto_quality_max()
+	assert(auto_quality_max == 1080)
+	key(.RETURN)
+	assert(settings_quality_menu && settings_cursor == 3 && render(renderer))
+	resolution := clay.GetElementData(clay.ID("settings-option", 4)).boundingBox
+	controls_pointer(
+		renderer, resolution.x + resolution.width / 2, resolution.y + resolution.height / 2,
+		true, true,
+	)
+	assert(settings_menu && !settings_quality_menu && auto_quality_max == 720)
+	key(.AC_BACK)
+	assert(!settings_menu)
+}
+
+check_quality_and_autoplay_ui :: proc(renderer: ^sdl.Renderer) {
+	old_time, old_duration, old_rate := timeline, duration_ms, rate
+	old_selected, old_playback := selected, playback
+	old_library_focus := library_focus_pending
+	defer {
+		timeline, duration_ms, rate = old_time, old_duration, old_rate
+		selected, playback = old_selected, old_playback
+		library_focus_pending = old_library_focus
+		stream_width, stream_height = 3840, 2160
+		clay.SetPointerState({-1, -1}, false)
+	}
+	result := Network_Result {
+		kind = .Stream,
+		stream = {width = 3840, height = 2160},
+	}
+	append(&result.stream.heights, 2160, 720)
+	defer free_network_result(&result)
+	apply_stream_quality(&result)
+	key(.UP)
+	assert(!quality_menu && render(renderer))
+	quality_button := clay.GetElementData(clay.ID("player-quality")).boundingBox
+	controls_pointer(
+		renderer, quality_button.x + quality_button.width / 2,
+		quality_button.y + quality_button.height / 2, true, true,
+	)
+	assert(quality_menu && render(renderer))
+	assert(clay.GetElementData(clay.ID("quality-option", 2)).found)
+	key(.AC_BACK)
+	assert(!quality_menu && !return_to_grid)
+	position := old_duration / 3
+	timeline.position_ms, rate = position, 1.5
+	quality_change_pending = true
+	result.error, result.quality_change, result.playback = .Transport, true, playback
+	apply_stream(renderer, &result)
+	assert(!browsing && !quality_change_pending && player_quality_height == 0)
+	notice, toast_until = "", 0
+	quality_change_pending = true
+	result.error, result.quality_height = .None, 720
+	result.stream.width, result.stream.height = 1280, 720
+	apply_stream(renderer, &result)
+	assert(!browsing && paused && rate == 1.5 && timeline.position_ms == position)
+	assert(player_quality_height == 720 && stream_height == 720)
+	append(&catalog.videos, model.Video{}, model.Video{id = "next", title = "Next fixture"})
+	defer resize(&catalog.videos, len(catalog.videos) - 2)
+	offer_next_video()
+	assert(autoplay_index == selected + 2 && autoplay_deadline != 0)
+	assert(render(renderer))
+	assert(clay.GetElementData(clay.ID("autoplay-cancel")).found)
+	key(.AC_BACK)
+	assert(return_to_grid)
+	return_to_grid, autoplay_deadline = false, 0
+	offer_next_video()
+	tick_autoplay(autoplay_deadline)
+	assert(!browsing && selected == old_selected + 2 && autoplay_deadline == 0)
 }

@@ -122,6 +122,13 @@ bool StarfishMediaAPIs_setPlayRate(StarfishMediaAPIs_C *api, const char *message
     return _ZN17StarfishMediaAPIs11SetPlayRateEPKc(api->inner(), message);
 }
 
+bool StarfishMediaAPIs_mute(StarfishMediaAPIs_C *api) {
+    using SetVolume = bool (*)(StarfishMediaAPIs *, const char *);
+    auto set_volume =
+        reinterpret_cast<SetVolume>(dlsym(RTLD_DEFAULT, "_ZN17StarfishMediaAPIs9setVolumeEPKc"));
+    return set_volume && set_volume(api->inner(), "{\"volume\":0}");
+}
+
 bool StarfishMediaAPIs_seek(StarfishMediaAPIs_C *api, const char *message) {
     return _ZN17StarfishMediaAPIs4SeekEPKc != nullptr &&
            _ZN17StarfishMediaAPIs4SeekEPKc(api->inner(), message);

@@ -81,6 +81,7 @@ main :: proc() {
 	clay_memory: []u8
 	defer {
 		if search_editing {finish_search_input(window)}
+		stop_feed_preview()
 		stop_playback()
 		write_control_state(true)
 		close_login_screen()
@@ -160,7 +161,9 @@ main :: proc() {
 			}
 		}
 		poll_network(renderer)
+		poll_feed_preview(sdl.GetTicks64())
 		poll_player()
+		tick_autoplay(sdl.GetTicks64())
 		poll_card_press(sdl.GetTicks64())
 		poll_login_tick()
 		apply_pending_seek(sdl.GetTicks64())
